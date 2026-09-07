@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aeráil Configuration</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>Stoßlüften</h1>
+      <p>Configure your Home Assistant connection and input sensors.</p>
+    </header>
+
+    <form id="config-form" novalidate>
+      <section class="card" id="connection-section">
+        <div class="section-heading">
+          <div>
+            <h2>Connection</h2>
+            <p>Connect to Home Assistant to select your sensors.</p>
+          </div>
+          <span class="status-badge hidden" id="connection-status"></span>
+        </div>
+
+        <div id="connection-fields">
+          <label>
+            <span>Home Assistant URL</span>
+            <input
+              id="ha-url"
+              name="haUrl"
+              type="url"
+              inputmode="url"
+              autocomplete="url"
+              placeholder="https://home.example.com"
+              required
+            >
+          </label>
+          <div class="actions">
+            <button type="button" class="primary" id="connect-button">Connect</button>
+          </div>
+        </div>
+
+        <div class="connected-state hidden" id="connected-state">
+          <div class="connection-summary">
+            <span class="checkmark">✓</span>
+            <div>
+              <strong>Connected</strong>
+              <span id="connected-url"></span>
+            </div>
+          </div>
+          <button type="button" class="secondary" id="edit-connection">Edit</button>
+        </div>
+
+        <p class="message hidden" id="connection-message"></p>
+      </section>
+
+      <section class="card hidden" id="sensors-section">
+        <div class="section-heading">
+          <div>
+            <h2>Sensors</h2>
+            <p>Choose the entities used for ventilation calculations. We recommend choosing indoor sensors most representative of your house.</p>
+          </div>
+        </div>
+
+        <div class="sensor-grid">
+          <label class="entity-field">
+            <span>Indoor temperature</span>
+            <input
+              id="indoor-temperature"
+              name="indoorTemperature"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="sensor.indoor_temperature"
+            >
+            <div class="suggestions hidden"></div>
+          </label>
+
+          <label class="entity-field">
+            <span>Indoor humidity</span>
+            <input
+              id="indoor-humidity"
+              name="indoorHumidity"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="sensor.indoor_humidity"
+            >
+            <div class="suggestions hidden"></div>
+          </label>
+
+          <label class="entity-field">
+            <span>Outdoor temperature</span>
+            <input
+              id="outdoor-temperature"
+              name="outdoorTemperature"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="sensor.outdoor_temperature"
+            >
+            <div class="suggestions hidden"></div>
+          </label>
+
+          <label class="entity-field">
+            <span>Outdoor humidity</span>
+            <input
+              id="outdoor-humidity"
+              name="outdoorHumidity"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="sensor.outdoor_humidity"
+            >
+            <div class="suggestions hidden"></div>
+          </label>
+        </div>
+
+        <p class="message hidden" id="sensor-message"></p>
+      </section>
+
+      <section class="save-section hidden" id="save-section">
+        <button type="submit" class="primary save-button" id="save-button">
+          Save configuration
+        </button>
+        <p class="message hidden" id="save-message"></p>
+      </section>
+    </form>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

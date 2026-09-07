@@ -1,0 +1,95 @@
+{
+  "name": "ventilate",
+  "author": "MakeAwesomeHappen",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "ventilate",
+    "uuid": "f6138dd3-e1bc-4849-807b-90460c8a2421",
+    "projectType": "moddable",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "emery",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "command",
+      "data"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "ACTIONBAR_BACK",
+          "file": "back.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ACTIONBAR_MINUS",
+          "file": "minus.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ACTIONBAR_PLAY",
+          "file": "play.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ACTIONBAR_PLUS",
+          "file": "plus.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ACTIONBAR_STOP",
+          "file": "stop.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_CLOCK",
+          "file": "clock.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_DROPLET",
+          "file": "droplet.png"
+        },
+        {
+          "type": "raw",
+          "name": "ICON_FAN",
+          "file": "fan.pdc"
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_THERMOMETER",
+          "file": "thermometer.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_TRENDING_DOWN",
+          "file": "trending-down.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_WAVES",
+          "file": "waves.png"
+        },
+        {
+          "type": "raw",
+          "name": "HOUSE",
+          "file": "house.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WINDOW",
+          "file": "window.pdc"
+        }
+      ]
+    }
+  }
+}

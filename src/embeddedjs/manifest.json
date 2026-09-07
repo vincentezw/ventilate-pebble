@@ -1,0 +1,31 @@
+{
+ 	"include":  [
+		"$(MODDABLE)/examples/manifest_mod.json",
+		"$(MODDABLE)/examples/manifest_typings.json"
+	],
+	"modules": {
+		"*": [
+      "./main.js"
+    ]
+	},
+  "resources": {
+		"*-alpha": [
+			{
+				"source": "$(MODDABLE)/examples/assets/scalablefonts/OpenSans/OpenSans-Semibold",
+				"size": 16,
+				"monochrome": true,
+				"blocks": [
+					"Basic Latin"
+				]
+			},
+			{
+				"source": "$(MODDABLE)/examples/assets/scalablefonts/OpenSans/OpenSans-Regular",
+				"size": 14,
+				"monochrome": true,
+				"blocks": [
+					"Basic Latin"
+				]
+			}
+		]
+	}
+}
