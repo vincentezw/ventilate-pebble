@@ -1,12 +1,12 @@
 {
-  "name": "ventilate",
-  "author": "MakeAwesomeHappen",
+  "name": "Ventilate",
+  "author": "vincentezw",
   "version": "1.0.0",
-  "keywords": ["pebble-app"],
-  "private": true,
+  "keywords": ["ventilate", "home assistant", "timer"],
+  "private": false,
   "dependencies": {},
   "pebble": {
-    "displayName": "ventilate",
+    "displayName": "Ventilate",
     "uuid": "f6138dd3-e1bc-4849-807b-90460c8a2421",
     "projectType": "moddable",
     "sdkVersion": "3",
@@ -18,6 +18,9 @@
     "watchapp": {
       "watchface": false
     },
+    "capabilities": [
+      "configurable"
+    ],
     "messageKeys": [
       "command",
       "data"
@@ -80,6 +83,11 @@
           "file": "waves.png"
         },
         {
+          "type": "bitmap",
+          "name": "CHECKMARK",
+          "file": "checkmark.png"
+        },
+        {
           "type": "raw",
           "name": "HOUSE",
           "file": "house.pdc"
@@ -88,6 +96,12 @@
           "type": "raw",
           "name": "WINDOW",
           "file": "window.pdc"
+        },
+        {
+          "type": "bitmap",
+          "name": "MENU_ICON",
+          "file": "icon.png",
+          "menuIcon": true
         }
       ]
     }

@@ -1,4 +1,5 @@
 const form = document.querySelector("#config-form");
+const clientId = "https://vincentezw.github.io/ventilate-pebble/";
 
 const connectionSection = document.querySelector("#connection-section");
 const connectionFields = document.querySelector("#connection-fields");
@@ -27,7 +28,9 @@ const sensorInputs = {
 let connected = false;
 let entities = [];
 let suggestionTimer = null;
-let haToken = ""; // Store long-lived token obtained via OAuth
+let haRefreshToken = null;
+let haAccessToken = null;
+let haAccessTokenExpiresIn = null;
 
 function normaliseUrl(url) {
   return url.trim().replace(/\/+$/, "");
@@ -63,7 +66,63 @@ function setConnecting(value) {
   connectButton.textContent = value ? "Connecting…" : "Connect";
 }
 
-// Redirects the browser tab to Home Assistant's native OAuth authorization endpoint
+function loadPreloadedEntitiesAndConfig() {
+  try {
+    // Merge search and hash parameters so URLSearchParams can read all keys reliably
+    const rawParams = (window.location.search ? window.location.search.substring(1) + "&" : "") + 
+                      (window.location.hash ? window.location.hash.substring(1) : "");
+    const params = new URLSearchParams(rawParams);
+
+    const preloadedUrl = params.get("url");
+    const preloadedEntities = params.get("entities");
+    const preloadedSensors = params.get("sensors");
+
+    if (preloadedUrl) {
+      haUrlInput.value = preloadedUrl;
+    }
+
+    if (preloadedEntities) {
+      const parsed = JSON.parse(preloadedEntities);
+      entities = parsed.map(function(item) {
+        if (Array.isArray(item)) {
+          return { id: item[0], name: item[1] || item[0] };
+        }
+        return item;
+      });
+      console.log("Loaded " + entities.length + " cached entities from PKJS.");
+    }
+
+    if (preloadedSensors) {
+      const savedSensors = JSON.parse(preloadedSensors);
+      if (savedSensors.indoorTemperature) sensorInputs.indoorTemperature.value = savedSensors.indoorTemperature;
+      if (savedSensors.indoorHumidity) sensorInputs.indoorHumidity.value = savedSensors.indoorHumidity;
+      if (savedSensors.outdoorTemperature) sensorInputs.outdoorTemperature.value = savedSensors.outdoorTemperature;
+      if (savedSensors.outdoorHumidity) sensorInputs.outdoorHumidity.value = savedSensors.outdoorHumidity;
+    }
+
+    if (preloadedUrl && (entities.length > 0 || preloadedSensors)) {
+      setConnected(true);
+      validateSensors();
+    }
+  } catch (err) {
+    console.error("Failed to parse preloaded data from hash:", err);
+  }
+}
+
+function entityMatches(entity, query) {
+  if (!query) {
+    return true;
+  }
+
+  const id = entity.id || "";
+  const name = entity.name || "";
+  const unit = entity.unit || "";
+  const deviceClass = entity.deviceClass || "";
+
+  const haystack = (id + " " + name + " " + unit + " " + deviceClass).toLowerCase();
+  return haystack.includes(query.toLowerCase());
+}
+
 function startOAuthFlow() {
   hideMessage(connectionMessage);
   const url = normaliseUrl(haUrlInput.value);
@@ -83,22 +142,21 @@ function startOAuthFlow() {
     return;
   }
 
-  // Preserve the HA URL across page redirects
   localStorage.setItem("ha_url", url);
 
-  // Clean current origin without query string or hash
+  const currentReturnTo = getQueryParam("return_to", null);
+  if (currentReturnTo) {
+    localStorage.setItem("return_to", currentReturnTo);
+  }
+
   const redirectUri = window.location.origin + window.location.pathname;
-  const clientId = redirectUri;
 
   const authUrl = `${url}/auth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
   window.location.href = authUrl;
 }
 
-// Exchanges the authorization code for a long-lived refresh token
+// Exchanges the authorization code for access and refresh tokens
 async function exchangeCodeForToken(haUrl, code) {
-  const redirectUri = window.location.origin + window.location.pathname;
-  const clientId = redirectUri;
-
   const response = await fetch(`${haUrl}/auth/token`, {
     method: "POST",
     headers: {
@@ -116,34 +174,19 @@ async function exchangeCodeForToken(haUrl, code) {
   }
 
   const data = await response.json();
-  
-  // Home Assistant refresh token acts as a long-lived token
-  return data.refresh_token || data.access_token;
-}
 
-async function fetchHomeAssistantStates(url, token) {
-  const response = await fetch(`${url}/api/states`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error("Home Assistant rejected the token.");
-    }
-    throw new Error(`Home Assistant returned HTTP ${response.status}.`);
-  }
-
-  return response.json();
+  return {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_in: data.expires_in,
+  };
 }
 
 // Handles page reload after Home Assistant redirects back with ?code=...
 async function handleOAuthCallback() {
   const urlParams = new URLSearchParams(window.location.search);
   const code = urlParams.get("code");
-  const storedUrl = localStorage.getItem("ha_url");
+  const storedUrl = localStorage.getItem("ha_url") || haUrlInput.value;
 
   if (!code || !storedUrl) {
     return;
@@ -152,20 +195,22 @@ async function handleOAuthCallback() {
   haUrlInput.value = storedUrl;
   setConnecting(true);
 
-  // Clean the ?code=... from the address bar
-  window.history.replaceState({}, document.title, window.location.pathname);
+  // Clean the ?code=... from the address bar while keeping existing hash
+  window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
 
   try {
-    haToken = await exchangeCodeForToken(storedUrl, code);
-    const states = await fetchHomeAssistantStates(storedUrl, haToken);
-
-    if (!Array.isArray(states)) {
-      throw new Error("Home Assistant returned an unexpected response.");
-    }
-
-    buildEntityIndex(states);
+    ({ access_token: haAccessToken, refresh_token: haRefreshToken, expires_in: haAccessTokenExpiresIn } = await exchangeCodeForToken(storedUrl, code));
     setConnected(true);
-    hideMessage(sensorMessage);
+
+    if (entities.length === 0) {
+      showMessage(
+        sensorMessage,
+        "Connected! Type entity IDs manually above. Auto-complete suggestions will appear next time you open settings. Be sure to save the configuration to persist the connection to Home Assistant.",
+        "info"
+      );
+    } else {
+      hideMessage(sensorMessage);
+    }
   } catch (error) {
     console.error(error);
     setConnected(false);
@@ -178,38 +223,9 @@ async function handleOAuthCallback() {
   }
 }
 
-function buildEntityIndex(states) {
-  entities = states
-    .filter((state) => {
-      const domain = state.entity_id?.split(".")[0];
-      return domain === "sensor" || domain === "input_number";
-    })
-    .map((state) => ({
-      id: state.entity_id,
-      name: state.attributes?.friendly_name || state.entity_id,
-      unit: state.attributes?.unit_of_measurement || "",
-      deviceClass: state.attributes?.device_class || "",
-    }));
-}
-
-function entityMatches(entity, query) {
-  if (!query) {
-    return true;
-  }
-
-  const haystack = [
-    entity.id,
-    entity.name,
-    entity.unit,
-    entity.deviceClass,
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes(query.toLowerCase());
-}
-
 function showSuggestions(input) {
+  if (entities.length === 0) return;
+
   const container = input.parentElement.querySelector(".suggestions");
   const query = input.value.trim();
 
@@ -255,18 +271,16 @@ function showSuggestions(input) {
 }
 
 function hideSuggestions(input) {
-  input.parentElement
-    .querySelector(".suggestions")
-    .classList.add("hidden");
+  const container = input.parentElement.querySelector(".suggestions");
+  if (container) {
+    container.classList.add("hidden");
+  }
 }
 
 function validateSensors() {
-  const values = Object.values(sensorInputs).map((input) => input.value.trim());
-  const valid = values.every(Boolean);
+  saveButton.disabled = !connected;
 
-  saveButton.disabled = !connected || !valid;
-
-  return valid;
+  return true;
 }
 
 function setupSensorInputs() {
@@ -311,43 +325,41 @@ function editConnection() {
 function getConfiguration() {
   return {
     haUrl: normaliseUrl(haUrlInput.value),
-    haToken: haToken,
-
-    sensors: {
-      indoorTemperature: sensorInputs.indoorTemperature.value.trim(),
-      indoorHumidity: sensorInputs.indoorHumidity.value.trim(),
-      outdoorTemperature: sensorInputs.outdoorTemperature.value.trim(),
-      outdoorHumidity: sensorInputs.outdoorHumidity.value.trim(),
-    },
+    haAccessToken,
+    haAccessTokenExpiresIn,
+    haRefreshToken,
+    indoorTemperature: sensorInputs.indoorTemperature.value.trim(),
+    indoorHumidity: sensorInputs.indoorHumidity.value.trim(),
+    outdoorTemperature: sensorInputs.outdoorTemperature.value.trim(),
+    outdoorHumidity: sensorInputs.outdoorHumidity.value.trim(),
   };
+}
+
+function getQueryParam(variable, defaultValue) {
+  const rawParams = window.location.search + "&" + window.location.hash.replace("#", "&");
+  const urlParams = new URLSearchParams(rawParams);
+  const value = urlParams.get(variable);
+
+  if (value !== null) {
+    return value;
+  }
+
+  const savedValue = localStorage.getItem(variable);
+  return savedValue !== null ? savedValue : defaultValue;
 }
 
 function saveConfiguration() {
   const configuration = getConfiguration();
+  const returnTo = getQueryParam("return_to", "pebblejs://close#");
+  
+  localStorage.removeItem("return_to");
 
-  const closeForm = document.createElement("form");
-  closeForm.method = "POST";
-  closeForm.action = "pebblejs://close#";
-  closeForm.style.display = "none";
+  const locationUrl = returnTo + encodeURIComponent(JSON.stringify(configuration));
+  showMessage(saveMessage, "Saving configuration…", "success");
 
-  const input = document.createElement("input");
-  input.type = "hidden";
-  input.name = "config";
-  input.value = JSON.stringify(configuration);
-
-  closeForm.appendChild(input);
-  document.body.appendChild(closeForm);
-
-  showMessage(
-    saveMessage,
-    "Saving configuration…",
-    "success"
-  );
-
-  closeForm.submit();
+  window.location.href = locationUrl;
 }
 
-// Connect button triggers the OAuth redirect
 connectButton.addEventListener("click", startOAuthFlow);
 
 editConnectionButton.addEventListener("click", editConnection);
@@ -359,18 +371,10 @@ form.addEventListener("submit", (event) => {
     return;
   }
 
-  if (!validateSensors()) {
-    showMessage(
-      sensorMessage,
-      "Choose an entity for all four sensors."
-    );
-    return;
-  }
-
   saveConfiguration();
 });
 
 setupSensorInputs();
 
-// Initialize OAuth callback processing on page load
+loadPreloadedEntitiesAndConfig();
 handleOAuthCallback();

@@ -42,11 +42,12 @@ const icons = {
   clock: new Poco.PebbleBitmap(6),
   droplet: new Poco.PebbleBitmap(7),
   fan: new Poco.PebbleDrawCommandImage(8),
-  house: new Poco.PebbleDrawCommandSequence(12),
+  checkmark: new Poco.PebbleBitmap(12),
+  house: new Poco.PebbleDrawCommandSequence(13),
   thermometer: new Poco.PebbleBitmap(9),
   trendingDown: new Poco.PebbleBitmap(10),
   waves: new Poco.PebbleBitmap(11),
-  window: new Poco.PebbleDrawCommandSequence(13),
+  window: new Poco.PebbleDrawCommandSequence(14),
 };
 
 let entityData = null;
@@ -60,7 +61,10 @@ let windAnimationTimer = null;
 let updateTimeDisplay = null;
 let countdownTimer = null;
 let ventilationStartedAt = null;
-let startIndoorRelHumidity = null;
+let startIndoorData = {
+  relativeHumidity: null,
+  temperature: null,
+};
 
 new Button({
   types: ["select", "up", "down", "back"],
@@ -134,6 +138,34 @@ const appMessage = new Message({
       } else if (state === "finished") {
         renderTimerFinishedScreen();
       }
+    } else if (command === 2) {
+      render.begin();
+      render.fillRectangle(colours.red, 0, 0, render.width, render.height);
+      const textWidth = render.getTextWidth(data, fonts.gothicRegular);
+
+      if (textWidth <= render.width - 10) {
+        drawTextCentered(data, fonts.gothicRegular, colours.black);
+      } else {
+        const middle = Math.floor(data.length / 2);
+        let splitIdx = data.lastIndexOf(' ', middle);
+
+        if (splitIdx === -1) {
+          splitIdx = data.indexOf(' ', middle);
+        }
+
+        if (splitIdx === -1) {
+          splitIdx = middle;
+        }
+        const line1 = data.slice(0, splitIdx).trim();
+        const line2 = data.slice(splitIdx).trim();
+        const fontHeight = 25;
+        const centerY = Math.floor(render.height / 2);
+
+        drawTextCentered(line1, fonts.gothicRegular, colours.black, centerY - Math.floor(fontHeight / 2));
+        drawTextCentered(line2, fonts.gothicRegular, colours.black, centerY + Math.floor(fontHeight / 2));
+      }
+      render.end();
+      return;
     }
   },
   onWritable() {
@@ -235,29 +267,28 @@ function stopAllTimers() {
 }
 
 function trySend(command, data = null) {
-  console.log("Attempting to send command:", command, "with data:", data);
   if (appMessageWritable) {
     const map = new Map([
       ["command", command],
     ]);
     if (data) {
-      console.log("Adding data to message map:", data);
       map.set("data", data);
     }
     appMessage.write(map);
   } else {
     pendingCommand = {command, data};
   }
-  console.log("Command sent or queued:", pendingCommand);
 }
 
 function sendVentilationEndCommand() {
+  localStorage.removeItem('start_data');
   const payload = {
-    startIndoorRelHumidity,
-    ventilationStartedAt,
-    ventilationEndedAt: Date.now(),
+    startIndoorRelHumidity: startIndoorData.relativeHumidity,
+    startIndoorTemperature: startIndoorData.temperature,
+    startedAt: ventilationStartedAt,
   };
   trySend(1, JSON.stringify(payload));
+  localStorage.removeItem('start_data');
 }
 
 function renderMainScreen() {
@@ -281,11 +312,11 @@ function renderMainScreen() {
   }[entityData.recommendation];
 
   const recommendationColor = {
-    good: render.makeColor(190, 235, 190),
-    excellent: render.makeColor(160, 225, 160),
-    weak: render.makeColor(245, 225, 150),
-    none: render.makeColor(225, 225, 225),
-    bad: render.makeColor(245, 180, 180),
+    good: render.makeColor(87, 250, 87),
+    excellent: render.makeColor(2, 247, 2),
+    weak: render.makeColor(245, 241, 44),
+    none: render.makeColor(145, 252, 236),
+    bad: render.makeColor(245, 51, 44),
   }[entityData.recommendation];
 
   const width = render.width - 24;
@@ -307,71 +338,59 @@ function renderMainScreen() {
   render.drawRoundRect(x, cardsY[1], width, 48, colours.card, radius);
   render.drawRoundRect(x, cardsY[2], width, 70, recommendationColor, radius);
 
+  drawTextCentered("Indoors", fonts.openSansRegular, colours.black, cardsY[0]);
+  render.drawBitmap(icons.thermometer, 22, cardsY[0] + 18);
+  render.drawBitmap(icons.droplet, (render.width / 2), cardsY[0] + 18);
+  render.drawBitmap(icons.waves, 22, cardsY[0] + 32);
   render.drawText(
-    "Indoors",
-    fonts.openSansRegular,
-    colours.black,
-    12,
-    cardsY[0]
-  );
-  render.drawBitmap(icons.thermometer, 8, cardsY[0] + 18);
-  render.drawBitmap(icons.droplet, (render.width / 2) - 14, cardsY[0] + 18);
-  render.drawBitmap(icons.waves, 8, cardsY[0] + 32);
-  render.drawText(
-    `${Math.round(entityData.indoor.temperature)}°C`,
+    `${Math.round(entityData.indoor.temperature)}${entityData.indoor.temp_unit}`,
     fonts.gothicRegular,
     colours.black,
-    22,
+    36,
     cardsY[0] + 18
   );
   render.drawText(
     `${Math.round(entityData.indoor.relativeHumidity)}% RH`,
     fonts.gothicRegular,
     colours.black,
-    (render.width / 2) + 2,
+    (render.width / 2) + 16,
     cardsY[0] + 18
   );
   render.drawText(
-    `${Math.round(entityData.indoor.absoluteHumidity)}g/m³ AH`,
+    `${Math.round(entityData.indoor.absoluteHumidity)}g/m³`,
     fonts.gothicRegular,
     colours.black,
-    22,
+    36,
     cardsY[0] + 32
   );
 
+  drawTextCentered("Outside", fonts.openSansRegular, colours.black, cardsY[1]);
+  render.drawBitmap(icons.thermometer, 22, cardsY[1] + 18);
+  render.drawBitmap(icons.droplet, (render.width / 2), cardsY[1] + 18);
+  render.drawBitmap(icons.waves, 22, cardsY[1] + 32);
   render.drawText(
-    "Outside",
-    fonts.openSansRegular,
-    colours.black,
-    12,
-    cardsY[1]
-  );
-  render.drawBitmap(icons.thermometer, 8, cardsY[1] + 18);
-  render.drawBitmap(icons.droplet, (render.width / 2) - 14, cardsY[1] + 18);
-  render.drawBitmap(icons.waves, 8, cardsY[1] + 32);
-  render.drawText(
-    `${Math.round(entityData.outdoor.temperature)}°C`,
+    `${Math.round(entityData.outdoor.temperature)}${entityData.outdoor.temp_unit}`,
     fonts.gothicRegular,
     colours.black,
-    22,
+    36,
     cardsY[1] + 18
   );
   render.drawText(
     `${Math.round(entityData.outdoor.relativeHumidity)}% RH`,
     fonts.gothicRegular,
     colours.black,
-    (render.width / 2) + 2,
+    (render.width / 2) + 16,
     cardsY[1] + 18
   );
   render.drawText(
-    `${Math.round(entityData.outdoor.absoluteHumidity)}g/m³ AH`,
+    `${Math.round(entityData.outdoor.absoluteHumidity)}g/m³`,
     fonts.gothicRegular,
     colours.black,
-    22,
+    36,
     cardsY[1] + 32
   );
 
-  const duration = `Ventilate for ${Math.round(entityData.recommendedDuration / 60)} min`;
+  const duration = `Ventilation time: ${Math.round(entityData.recommendedDuration / 60)} min`;
   const estimate = `${Math.round(entityData.expectedIndoorHumidity)}% RH`;
   const estimateWidth = render.getTextWidth(estimate, fonts.gothicRegular);
   const trendIconPadding = (render.width - estimateWidth) / 2 - 24;
@@ -490,7 +509,9 @@ function renderWaitScreen() {
   const durationMs = (selectedDuration || 420) * 1000;
   const endTime = Date.now() + durationMs;
   ventilationStartedAt = Date.now();
-  startIndoorRelHumidity = entityData?.indoor.relativeHumidity;
+  startIndoorData.relativeHumidity = entityData?.indoor.relativeHumidity;
+  startIndoorData.temperature = entityData?.indoor.temperature;
+  localStorage.setItem('start_data', JSON.stringify(startIndoorData));
   scheduleVentilationWakeup();
 
   const scale = 3.0;
@@ -561,58 +582,99 @@ function renderTimerFinishedScreen() {
   state = "finished";
   stopAllTimers();
 
-  const width = render.width - 24;
-  const cardX = (render.width - width - 14) / 2;
-  const cardY = 32;
-  const cardHeight = 100;
+  const effectiveWidth = render.width - 14; 
+  const width = effectiveWidth - 24;
+  const cardX = (effectiveWidth - width) / 2;
+  const cardY = 62;
+  const cardHeight = 118; // Increased slightly to fit tempDiff cleanly
 
   render.begin();
   render.fillRectangle(colours.white, 0, 0, render.width, render.height);
   renderActionBar("back", null, null);
-  drawTextCentered("Close all windows!", fonts.openSansBold, colours.black, 8);
 
-  const lastIndoorHumidity = entityData ? entityData.indoor.relativeHumidity : null;
-  const humUpdatedTimestamp = entityData && entityData.indoor.relHumLastUpdated
-    ? new Date(entityData.indoor.relHumLastUpdated).getTime()
-    : null;
+  render.drawBitmap(icons.checkmark, (effectiveWidth / 2) - 12, 4);
+  drawTextCentered("Close all windows!", fonts.openSansBold, colours.black, 32);
 
-  console.log("humUpdatedTimestamp:", humUpdatedTimestamp, "ventilationStartedAt:", ventilationStartedAt);
-
-  const hasNewData = humUpdatedTimestamp && ventilationStartedAt && (humUpdatedTimestamp >= ventilationStartedAt);
-  const cardColor = hasNewData ? colours.green : colours.card;
+  const endSummary = entityData ? entityData.endSummary : null;
+  const isFresh = Boolean(endSummary?.isFresh);
+  
+  const cardColor = isFresh ? colours.green : colours.card;
   render.drawRoundRect(cardX, cardY, width, cardHeight, cardColor, 6);
 
+  const lastIndoorHumidity = entityData && entityData.indoor ? entityData.indoor.relativeHumidity : null;
+
   if (lastIndoorHumidity !== null) {
-    const elapsedSecs = Math.max(0, Math.floor((Date.now() - humUpdatedTimestamp) / 1000));
-    let timeAgoStr = "just now";
-    if (elapsedSecs >= 60) {
-      const mins = Math.floor(elapsedSecs / 60);
-      timeAgoStr = `${mins} min ago`;
-    } else if (elapsedSecs > 5) {
-      timeAgoStr = `${elapsedSecs} sec ago`;
-    }
+    const minutesAgo = (endSummary && endSummary.measuredMinutesAgo !== undefined)
+      ? endSummary.measuredMinutesAgo
+      : Math.max(0, Math.floor((Date.now() - new Date(entityData.indoor.relHumLastUpdated).getTime()) / 60000));
 
-    render.drawText("Indoor Humidity", fonts.openSansRegular, colours.black, cardX + 8, cardY + 6);
-    
-    const humidityText = `${Math.round(lastIndoorHumidity)}% RH`;
-    render.drawBitmap(icons.droplet, cardX + 8, cardY + 30);
-    render.drawText(humidityText, fonts.openSansBold, colours.black, cardX + 28, cardY + 26);
-    render.drawText(`Updated ${timeAgoStr}`, fonts.gothicRegular, colours.black, cardX + 8, cardY + 52);
+    const timeAgoStr = minutesAgo === 0 ? "just now" : `${minutesAgo} min ago`;
 
-    if (entityData.expectedIndoorHumidity !== undefined) {
-      const targetText = `Target: ${Math.round(entityData.expectedIndoorHumidity)}% RH`;
-      render.drawText(targetText, fonts.gothicRegular, colours.black, cardX + 8, cardY + 70);
+    if (isFresh) {
+      const relDiff = endSummary.relHumidityDiff ?? 0;
+      const relDiffStr = relDiff >= 0 ? `-${relDiff}%` : `+${Math.abs(relDiff)}%`;
+      
+      const currentHum = endSummary.indoorHumidity ?? lastIndoorHumidity;
+
+      render.drawBitmap(icons.droplet, cardX + 8, cardY + 8);
+      render.drawText(
+        `${Math.round(currentHum)}% RH (${relDiffStr})`, 
+        fonts.openSansBold, 
+        colours.black, 
+        cardX + 28, 
+        cardY + 4
+      );
+
+      const absDiff = endSummary.absHumidityDiff ?? 0;
+      const absDiffStr = absDiff >= 0 ? `-${absDiff} g/m³` : `+${Math.abs(absDiff)} g/m³`;
+      render.drawText(`Abs drop: ${absDiffStr}`, fonts.gothicRegular, colours.black, cardX + 8, cardY + 28);
+
+      if (endSummary.tempDiff !== undefined && endSummary.tempDiff !== null) {
+        const tDiff = endSummary.tempDiff;
+        const tempStr = tDiff <= 0 ? `-${Math.abs(tDiff)}°C` : `+${tDiff}°C`;
+        render.drawText(`Temp change: ${tempStr}`, fonts.gothicRegular, colours.black, cardX + 8, cardY + 46);
+      }
+
+      if (entityData.expectedIndoorHumidity !== undefined) {
+        render.drawText(
+          `Target: ${Math.round(entityData.expectedIndoorHumidity)}% RH`, 
+          fonts.gothicRegular, 
+          colours.black, 
+          cardX + 8, 
+          cardY + 64
+        );
+      }
+      render.drawText(`Updated ${timeAgoStr}`, fonts.gothicRegular, colours.black, cardX + 8, cardY + 88);
+    } else {
+      render.drawBitmap(icons.droplet, cardX + 8, cardY + 8);
+      render.drawText(
+        `${Math.round(lastIndoorHumidity)}% RH (Stale)`, 
+        fonts.openSansBold, 
+        colours.black, 
+        cardX + 28, 
+        cardY + 4
+      );
+      render.drawText(`Last reading ${timeAgoStr}`, fonts.gothicRegular, colours.black, cardX + 8, cardY + 28);
+
+      if (entityData.expectedIndoorHumidity !== undefined) {
+        render.drawText(
+          `Target: ${Math.round(entityData.expectedIndoorHumidity)}% RH`, 
+          fonts.gothicRegular, 
+          colours.black, 
+          cardX + 8, 
+          cardY + 48
+        );
+      }
+
+      render.drawText("No new data since start.", fonts.gothicRegular, colours.black, cardX + 8, cardY + 76);
     }
   } else {
     render.drawBitmap(icons.clock, cardX + 8, cardY + 12);
     render.drawText("Waiting for sensor...", fonts.openSansRegular, colours.black, cardX + 28, cardY + 10);
-    
-    drawTextCentered("No data received since", fonts.gothicRegular, colours.black, cardY + 42);
-    drawTextCentered("ventilation started.", fonts.gothicRegular, colours.black, cardY + 58);
+    render.drawText("No data received yet.", fonts.gothicRegular, colours.black, cardX + 8, cardY + 42);
   }
 
-  drawTextCentered("Press select to return home", fonts.gothicRegular, colours.black, render.height - 22);
-
+  drawTextCentered("Press select to return home", fonts.gothicRegular, colours.black, render.height - 20);
   render.end();
 }
 
@@ -626,6 +688,16 @@ function initApp() {
   const storedStartTime = localStorage.getItem(START_TIME_KEY);
   if (storedStartTime) {
     ventilationStartedAt = parseInt(storedStartTime, 10);
+  }
+  const storedStartData = localStorage.getItem('start_data');
+  if (storedStartData) {
+    try {
+      startIndoorData = JSON.parse(storedStartData);
+      console.log("Retrieved start indoor data:", JSON.stringify(startIndoorData));
+    } catch (e) {
+      console.error("Failed to parse start indoor data:", e);
+      startIndoorData = { relativeHumidity: null, temperature: null };
+    }
   }
 
   if (watch.wake) {

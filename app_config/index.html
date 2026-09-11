@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Aeráil Configuration</title>
+  <title>Ventilate-Pebble Configuration</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="container">
     <header>
-      <h1>Stoßlüften</h1>
+      <h1>Ventilate-Pebble</h1>
       <p>Configure your Home Assistant connection and input sensors.</p>
     </header>
 
@@ -60,6 +60,7 @@
           <div>
             <h2>Sensors</h2>
             <p>Choose the entities used for ventilation calculations. We recommend choosing indoor sensors most representative of your house.</p>
+            <p class="message info hidden" id="entity-hint"></p>
           </div>
         </div>
 
@@ -71,6 +72,8 @@
               name="indoorTemperature"
               type="text"
               autocomplete="off"
+              autocorrect="off"
+              autocapitalize="none"
               spellcheck="false"
               placeholder="sensor.indoor_temperature"
             >
@@ -84,6 +87,8 @@
               name="indoorHumidity"
               type="text"
               autocomplete="off"
+              autocorrect="off"
+              autocapitalize="none"
               spellcheck="false"
               placeholder="sensor.indoor_humidity"
             >
@@ -97,6 +102,8 @@
               name="outdoorTemperature"
               type="text"
               autocomplete="off"
+              autocorrect="off"
+              autocapitalize="none"
               spellcheck="false"
               placeholder="sensor.outdoor_temperature"
             >
@@ -110,6 +117,8 @@
               name="outdoorHumidity"
               type="text"
               autocomplete="off"
+              autocorrect="off"
+              autocapitalize="none"
               spellcheck="false"
               placeholder="sensor.outdoor_humidity"
             >
