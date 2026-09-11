@@ -63,6 +63,29 @@ function setConnecting(value) {
   connectButton.textContent = value ? "Connecting…" : "Connect";
 }
 
+// Loads pre-cached entities passed in by PKJS via the URL hash (#url=...&entities=...)
+function loadPreloadedEntitiesAndConfig() {
+  try {
+    const hash = window.location.hash.substring(1);
+    if (!hash) return;
+
+    const params = new URLSearchParams(hash);
+    const preloadedUrl = params.get("url");
+    const preloadedEntities = params.get("entities");
+
+    if (preloadedUrl) {
+      haUrlInput.value = preloadedUrl;
+    }
+
+    if (preloadedEntities) {
+      entities = JSON.parse(decodeURIComponent(preloadedEntities));
+      console.log(`Loaded ${entities.length} cached entities from PKJS.`);
+    }
+  } catch (err) {
+    console.error("Failed to parse preloaded data from hash:", err);
+  }
+}
+
 // Redirects the browser tab to Home Assistant's native OAuth authorization endpoint
 function startOAuthFlow() {
   hideMessage(connectionMessage);
@@ -121,29 +144,11 @@ async function exchangeCodeForToken(haUrl, code) {
   return data.refresh_token || data.access_token;
 }
 
-async function fetchHomeAssistantStates(url, token) {
-  const response = await fetch(`${url}/api/states`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error("Home Assistant rejected the token.");
-    }
-    throw new Error(`Home Assistant returned HTTP ${response.status}.`);
-  }
-
-  return response.json();
-}
-
 // Handles page reload after Home Assistant redirects back with ?code=...
 async function handleOAuthCallback() {
   const urlParams = new URLSearchParams(window.location.search);
   const code = urlParams.get("code");
-  const storedUrl = localStorage.getItem("ha_url");
+  const storedUrl = localStorage.getItem("ha_url") || haUrlInput.value;
 
   if (!code || !storedUrl) {
     return;
@@ -157,15 +162,17 @@ async function handleOAuthCallback() {
 
   try {
     haToken = await exchangeCodeForToken(storedUrl, code);
-    const states = await fetchHomeAssistantStates(storedUrl, haToken);
-
-    if (!Array.isArray(states)) {
-      throw new Error("Home Assistant returned an unexpected response.");
-    }
-
-    buildEntityIndex(states);
     setConnected(true);
-    hideMessage(sensorMessage);
+
+    if (entities.length === 0) {
+      showMessage(
+        sensorMessage,
+        "Connected! Type entity IDs manually below. Auto-complete suggestions will appear next time you open settings.",
+        "info"
+      );
+    } else {
+      hideMessage(sensorMessage);
+    }
   } catch (error) {
     console.error(error);
     setConnected(false);
@@ -176,20 +183,6 @@ async function handleOAuthCallback() {
   } finally {
     setConnecting(false);
   }
-}
-
-function buildEntityIndex(states) {
-  entities = states
-    .filter((state) => {
-      const domain = state.entity_id?.split(".")[0];
-      return domain === "sensor" || domain === "input_number";
-    })
-    .map((state) => ({
-      id: state.entity_id,
-      name: state.attributes?.friendly_name || state.entity_id,
-      unit: state.attributes?.unit_of_measurement || "",
-      deviceClass: state.attributes?.device_class || "",
-    }));
 }
 
 function entityMatches(entity, query) {
@@ -210,6 +203,8 @@ function entityMatches(entity, query) {
 }
 
 function showSuggestions(input) {
+  if (entities.length === 0) return;
+
   const container = input.parentElement.querySelector(".suggestions");
   const query = input.value.trim();
 
@@ -255,9 +250,10 @@ function showSuggestions(input) {
 }
 
 function hideSuggestions(input) {
-  input.parentElement
-    .querySelector(".suggestions")
-    .classList.add("hidden");
+  const container = input.parentElement.querySelector(".suggestions");
+  if (container) {
+    container.classList.add("hidden");
+  }
 }
 
 function validateSensors() {
@@ -325,26 +321,37 @@ function getConfiguration() {
 function saveConfiguration() {
   const configuration = getConfiguration();
 
-  const closeForm = document.createElement("form");
-  closeForm.method = "POST";
-  closeForm.action = "pebblejs://close#";
-  closeForm.style.display = "none";
+  // If executing inside Pebble mobile app webview
+  if (window.location.href.includes("pebblejs://") || navigator.userAgent.includes("Pebble")) {
+    const closeForm = document.createElement("form");
+    closeForm.method = "POST";
+    closeForm.action = "pebblejs://close#";
+    closeForm.style.display = "none";
 
-  const input = document.createElement("input");
-  input.type = "hidden";
-  input.name = "config";
-  input.value = JSON.stringify(configuration);
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "config";
+    input.value = JSON.stringify(configuration);
 
-  closeForm.appendChild(input);
-  document.body.appendChild(closeForm);
+    closeForm.appendChild(input);
+    document.body.appendChild(closeForm);
 
-  showMessage(
-    saveMessage,
-    "Saving configuration…",
-    "success"
-  );
+    showMessage(
+      saveMessage,
+      "Saving configuration…",
+      "success"
+    );
 
-  closeForm.submit();
+    closeForm.submit();
+  } else {
+    // Desktop Browser Testing Fallback
+    console.log("Configuration Saved (Browser Test):", configuration);
+    showMessage(
+      saveMessage,
+      "Configuration saved (Browser Test Mode)! Check console output.",
+      "success"
+    );
+  }
 }
 
 // Connect button triggers the OAuth redirect
@@ -372,5 +379,6 @@ form.addEventListener("submit", (event) => {
 
 setupSensorInputs();
 
-// Initialize OAuth callback processing on page load
+// Process initial PKJS preloaded cache and OAuth callback
+loadPreloadedEntitiesAndConfig();
 handleOAuthCallback();
