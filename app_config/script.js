@@ -319,36 +319,26 @@ function getConfiguration() {
 
 function saveConfiguration() {
   const configuration = getConfiguration();
+  const closeForm = document.createElement("form");
+  closeForm.method = "POST";
+  closeForm.action = "pebblejs://close#";
+  closeForm.style.display = "none";
 
-  if (window.location.href.includes("pebblejs://") || navigator.userAgent.includes("Pebble")) {
-    const closeForm = document.createElement("form");
-    closeForm.method = "POST";
-    closeForm.action = "pebblejs://close#";
-    closeForm.style.display = "none";
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = "config";
+  input.value = JSON.stringify(configuration);
 
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = "config";
-    input.value = JSON.stringify(configuration);
+  closeForm.appendChild(input);
+  document.body.appendChild(closeForm);
 
-    closeForm.appendChild(input);
-    document.body.appendChild(closeForm);
+  showMessage(
+    saveMessage,
+    "Saving configuration…",
+    "success"
+  );
 
-    showMessage(
-      saveMessage,
-      "Saving configuration…",
-      "success"
-    );
-
-    closeForm.submit();
-  } else {
-    console.log("Configuration Saved (Browser Test):", configuration);
-    showMessage(
-      saveMessage,
-      "Configuration saved (Browser Test Mode)! Check console output.",
-      "success"
-    );
-  }
+  closeForm.submit();
 }
 
 connectButton.addEventListener("click", startOAuthFlow);
