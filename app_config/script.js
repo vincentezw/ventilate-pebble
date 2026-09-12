@@ -63,7 +63,7 @@ function setConnecting(value) {
   connectButton.textContent = value ? "Connecting…" : "Connect";
 }
 
-// Loads pre-cached entities passed in by PKJS via the URL hash (#url=...&entities=...)
+// Loads pre-cached entities and existing config passed in by PKJS
 function loadPreloadedEntitiesAndConfig() {
   try {
     const hash = window.location.hash.substring(1);
@@ -72,14 +72,34 @@ function loadPreloadedEntitiesAndConfig() {
     const params = new URLSearchParams(hash);
     const preloadedUrl = params.get("url");
     const preloadedEntities = params.get("entities");
+    const preloadedSensors = params.get("sensors");
+    const preloadedToken = params.get("token");
 
     if (preloadedUrl) {
       haUrlInput.value = preloadedUrl;
     }
 
+    if (preloadedToken) {
+      haToken = preloadedToken;
+    }
+
     if (preloadedEntities) {
-      entities = JSON.parse(decodeURIComponent(preloadedEntities));
+      entities = JSON.parse(preloadedEntities);
       console.log(`Loaded ${entities.length} cached entities from PKJS.`);
+    }
+
+    if (preloadedSensors) {
+      const savedSensors = JSON.parse(preloadedSensors);
+      if (savedSensors.indoorTemperature) sensorInputs.indoorTemperature.value = savedSensors.indoorTemperature;
+      if (savedSensors.indoorHumidity) sensorInputs.indoorHumidity.value = savedSensors.indoorHumidity;
+      if (savedSensors.outdoorTemperature) sensorInputs.outdoorTemperature.value = savedSensors.outdoorTemperature;
+      if (savedSensors.outdoorHumidity) sensorInputs.outdoorHumidity.value = savedSensors.outdoorHumidity;
+    }
+
+    // Automatically reveal the sensors section if a URL and token are already stored
+    if (preloadedUrl && haToken) {
+      setConnected(true);
+      validateSensors();
     }
   } catch (err) {
     console.error("Failed to parse preloaded data from hash:", err);
@@ -106,8 +126,12 @@ function startOAuthFlow() {
     return;
   }
 
-  // Preserve the HA URL across page redirects
   localStorage.setItem("ha_url", url);
+
+  const currentReturnTo = getQueryParam("return_to", null);
+  if (currentReturnTo) {
+    localStorage.setItem("return_to", currentReturnTo);
+  }
 
   const redirectUri = window.location.origin + window.location.pathname;
   const clientId = redirectUri;
@@ -318,15 +342,16 @@ function getConfiguration() {
 }
 
 function getQueryParam(variable, defaultValue) {
-  const query = window.location.search.substring(1);
-  const vars = query.split("&");
-  for (let i = 0; i < vars.length; i++) {
-    const pair = vars[i].split("=");
-    if (decodeURIComponent(pair[0]) === variable) {
-      return decodeURIComponent(pair[1]);
-    }
+  const rawParams = window.location.search + "&" + window.location.hash.replace("#", "&");
+  const urlParams = new URLSearchParams(rawParams);
+  const value = urlParams.get(variable);
+  
+  if (value !== null) {
+    return value;
   }
-  return defaultValue;
+
+  const savedValue = localStorage.getItem(variable);
+  return savedValue !== null ? savedValue : defaultValue;
 }
 
 function saveConfiguration() {
