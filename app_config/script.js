@@ -109,7 +109,6 @@ function startOAuthFlow() {
   // Preserve the HA URL across page redirects
   localStorage.setItem("ha_url", url);
 
-  // Clean current origin without query string or hash
   const redirectUri = window.location.origin + window.location.pathname;
   const clientId = redirectUri;
 
@@ -167,7 +166,7 @@ async function handleOAuthCallback() {
     if (entities.length === 0) {
       showMessage(
         sensorMessage,
-        "Connected! Type entity IDs manually below. Auto-complete suggestions will appear next time you open settings.",
+        "Connected! Type entity IDs manually above. Auto-complete suggestions will appear next time you open settings. Be sure to save the configuration to persist the connection to Home Assistant.",
         "info"
       );
     } else {
@@ -321,7 +320,6 @@ function getConfiguration() {
 function saveConfiguration() {
   const configuration = getConfiguration();
 
-  // If executing inside Pebble mobile app webview
   if (window.location.href.includes("pebblejs://") || navigator.userAgent.includes("Pebble")) {
     const closeForm = document.createElement("form");
     closeForm.method = "POST";
@@ -344,7 +342,6 @@ function saveConfiguration() {
 
     closeForm.submit();
   } else {
-    // Desktop Browser Testing Fallback
     console.log("Configuration Saved (Browser Test):", configuration);
     showMessage(
       saveMessage,
@@ -354,7 +351,6 @@ function saveConfiguration() {
   }
 }
 
-// Connect button triggers the OAuth redirect
 connectButton.addEventListener("click", startOAuthFlow);
 
 editConnectionButton.addEventListener("click", editConnection);
@@ -366,19 +362,10 @@ form.addEventListener("submit", (event) => {
     return;
   }
 
-  if (!validateSensors()) {
-    showMessage(
-      sensorMessage,
-      "Choose an entity for all four sensors."
-    );
-    return;
-  }
-
   saveConfiguration();
 });
 
 setupSensorInputs();
 
-// Process initial PKJS preloaded cache and OAuth callback
 loadPreloadedEntitiesAndConfig();
 handleOAuthCallback();

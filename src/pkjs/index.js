@@ -1,4 +1,10 @@
 const HA_URL = "https://ha.local.zwanenburg.ie";
+// let haConfig;
+let haConfig = {
+  haUrl: HA_URL,
+  haToken: HA_TOKEN
+};
+const CONFIG_URL="https://vincentezw.github.io/ventilate-pebble/";
 const ENTITY_INDOOR_TEMPERATURE = "sensor.ws2350_v2_38_indoor_temperature";
 const ENTITY_INDOOR_HUMIDITY = "sensor.ws2350_v2_38_indoor_humidity";
 const ENTITY_OUTDOOR_TEMPERATURE = "sensor.ws2350_v2_38_outdoor_temperature";
@@ -16,6 +22,95 @@ const entities = {
 };
 
 let humidityData;
+
+function loadConfig() {
+  const configString = localStorage.getItem('ha_config');
+  if (configString) {
+    try {
+      haConfig = JSON.parse(configString);
+      console.log('Loaded Home Assistant configuration from localStorage.');
+    }
+    catch (err) {
+      console.log('Error parsing Home Assistant configuration from localStorage: ' + err.message);
+    }
+  }
+}
+
+Pebble.addEventListener('showConfiguration', function(e) {
+  loadConfigWithEntities();
+});
+
+Pebble.addEventListener('webviewclosed', function(e) {
+  if (!e || !e.response) {
+    return;
+  }
+
+  try {
+    const config = JSON.parse(decodeURIComponent(e.response));
+    localStorage.setItem('ha_config', JSON.stringify(config));
+    console.log("Saved Home Assistant configuration to localStorage.");
+  } catch (err) {
+    console.log('Error parsing configuration response: ' + err.message);
+  }
+});
+
+function composeConfigUrl() {
+  if (!haConfig || !haConfig.haUrl) {
+    return CONFIG_URL;
+  }
+
+  return CONFIG_URL + '?url=' + haConfig.haUrl;
+}
+
+function loadConfigWithEntities() {
+  if (!haConfig || !haConfig.haUrl || !haConfig.haToken) {
+    console.log('Home Assistant URL or token not set in configuration.');
+    Pebble.openURL(CONFIG_URL);
+    return;
+  }
+
+  const req = new XMLHttpRequest();
+  req.open('GET', haConfig.haUrl + '/api/states', true);
+  req.setRequestHeader('Authorization', 'Bearer ' + haConfig.haToken);
+  req.setRequestHeader('Content-Type', 'application/json');
+
+  req.onload = function() {
+    if (req.status === 200) {
+      try {
+        const states = JSON.parse(req.responseText);
+        var filtered = states
+          .filter(function(s) {
+            if (!s.entity_id || !s.entity_id.startsWith('sensor.')) { return false;  }
+            const deviceClass = s.attributes && s.attributes.device_class;
+            return deviceClass === 'temperature' || deviceClass === 'humidity';
+          })
+          .map(function(s) {
+            const friendlyName = (s.attributes && s.attributes.friendly_name) || s.entity_id;
+            return {
+              id: s.entity_id,
+              name: friendlyName.length > 35 ? friendlyName.substring(0, 32) + '...' : friendlyName
+            };
+          });
+
+        const entities = JSON.stringify(filtered);
+        const url = CONFIG_URL + '#url=' + haConfig.haUrl + '&entities=' + encodeURIComponent(entities);
+        Pebble.openURL(url);
+      } catch (err) {
+        console.log('Error parsing states response: ' + err.message);
+        Pebble.openURL(composeConfigUrl());
+      }
+    } else {
+      console.log('Failed to fetch states natively. HTTP Status: ' + req.status);
+      Pebble.openURL(composeConfigUrl());
+    }
+  };
+
+  req.onerror = function() {
+    console.log('Network error occurred while fetching Home Assistant entities.');
+  };
+
+  req.send();
+}
 
 function connectHomeAssistant() {
   const wsUrl = HA_URL.replace(/^http/, "ws") + "/api/websocket";
@@ -276,3 +371,5 @@ Pebble.addEventListener('appmessage', function (e) {
     calculateResult(data);
   }
 });
+
+// loadConfig();
