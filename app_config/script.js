@@ -317,28 +317,25 @@ function getConfiguration() {
   };
 }
 
+function getQueryParam(variable, defaultValue) {
+  const query = window.location.search.substring(1);
+  const vars = query.split("&");
+  for (let i = 0; i < vars.length; i++) {
+    const pair = vars[i].split("=");
+    if (decodeURIComponent(pair[0]) === variable) {
+      return decodeURIComponent(pair[1]);
+    }
+  }
+  return defaultValue;
+}
+
 function saveConfiguration() {
   const configuration = getConfiguration();
-  const closeForm = document.createElement("form");
-  closeForm.method = "POST";
-  closeForm.action = "pebblejs://close#";
-  closeForm.style.display = "none";
-
-  const input = document.createElement("input");
-  input.type = "hidden";
-  input.name = "config";
-  input.value = JSON.stringify(configuration);
-
-  closeForm.appendChild(input);
-  document.body.appendChild(closeForm);
-
-  showMessage(
-    saveMessage,
-    "Saving configuration…",
-    "success"
-  );
-
-  closeForm.submit();
+  const returnTo = getQueryParam("return_to", "pebblejs://close#");
+  const locationUrl = returnTo + encodeURIComponent(JSON.stringify(configuration));
+  showMessage(saveMessage, "Saving configuration…", "success");
+    
+  window.location.href = locationUrl;
 }
 
 connectButton.addEventListener("click", startOAuthFlow);
