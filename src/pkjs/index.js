@@ -93,7 +93,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
   try {
     const config = JSON.parse(decodeURIComponent(e.response));
     localStorage.setItem('ha_config', JSON.stringify(config));
-    console.log("Saved Home Assistant configuration to localStorage.");
+    console.log("Saved Home Assistant configuration to localStorage.", JSON.stringify(config));
   } catch (err) {
     console.log('Error parsing configuration response: ' + err.message);
   }
@@ -134,7 +134,7 @@ function loadConfigWithEntities(retry = false) {
             const friendlyName = (s.attributes && s.attributes.friendly_name) || s.entity_id;
             return {
               id: s.entity_id,
-              name: friendlyName.length > 35 ? friendlyName.substring(0, 32) + '...' : friendlyName
+              name: friendlyName.length > 25 ? friendlyName.substring(0, 22) + '...' : friendlyName
             };
           });
 

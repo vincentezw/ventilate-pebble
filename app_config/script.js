@@ -64,13 +64,13 @@ function setConnecting(value) {
   connectButton.textContent = value ? "Connecting…" : "Connect";
 }
 
-// Loads pre-cached entities and existing config passed in by PKJS
 function loadPreloadedEntitiesAndConfig() {
   try {
-    const hash = window.location.hash.substring(1);
-    if (!hash) return;
+    // Merge search and hash parameters so URLSearchParams can read all keys reliably
+    const rawParams = (window.location.search ? window.location.search.substring(1) + "&" : "") + 
+                      (window.location.hash ? window.location.hash.substring(1) : "");
+    const params = new URLSearchParams(rawParams);
 
-    const params = new URLSearchParams(hash);
     const preloadedUrl = params.get("url");
     const preloadedEntities = params.get("entities");
     const preloadedSensors = params.get("sensors");
@@ -90,8 +90,14 @@ function loadPreloadedEntitiesAndConfig() {
     }
 
     if (preloadedEntities) {
-      entities = JSON.parse(preloadedEntities);
-      console.log(`Loaded ${entities.length} cached entities from PKJS.`);
+      const parsed = JSON.parse(preloadedEntities);
+      entities = parsed.map(function(item) {
+        if (Array.isArray(item)) {
+          return { id: item[0], name: item[1] || item[0] };
+        }
+        return item;
+      });
+      console.log("Loaded " + entities.length + " cached entities from PKJS.");
     }
 
     if (preloadedSensors) {
@@ -102,14 +108,27 @@ function loadPreloadedEntitiesAndConfig() {
       if (savedSensors.outdoorHumidity) sensorInputs.outdoorHumidity.value = savedSensors.outdoorHumidity;
     }
 
-    // Automatically reveal the sensors section if a URL and token are already stored
-    if (preloadedUrl && (haAccessToken || haRefreshToken)) {
+    if (preloadedUrl && (entities.length > 0 || haAccessToken || haRefreshToken)) {
       setConnected(true);
       validateSensors();
     }
   } catch (err) {
     console.error("Failed to parse preloaded data from hash:", err);
   }
+}
+
+function entityMatches(entity, query) {
+  if (!query) {
+    return true;
+  }
+
+  const id = entity.id || "";
+  const name = entity.name || "";
+  const unit = entity.unit || "";
+  const deviceClass = entity.deviceClass || "";
+
+  const haystack = (id + " " + name + " " + unit + " " + deviceClass).toLowerCase();
+  return haystack.includes(query.toLowerCase());
 }
 
 // Redirects the browser tab to Home Assistant's native OAuth authorization endpoint
@@ -214,23 +233,6 @@ async function handleOAuthCallback() {
   } finally {
     setConnecting(false);
   }
-}
-
-function entityMatches(entity, query) {
-  if (!query) {
-    return true;
-  }
-
-  const haystack = [
-    entity.id,
-    entity.name,
-    entity.unit,
-    entity.deviceClass,
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes(query.toLowerCase());
 }
 
 function showSuggestions(input) {
