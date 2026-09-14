@@ -1,5 +1,4 @@
-// const HA_URL = "https://ha.local.zwanenburg.ie";
-// let haConfig;
+const clientId = "https://vincentezw.github.io/ventilate-pebble/";
 let haConfig = {
   haUrl: null,
   haAccessToken: null,
@@ -28,7 +27,7 @@ let humidityData;
 function refreshAccessToken(callback) {
   if (!haConfig || !haConfig.haUrl || !haConfig.haRefreshToken) {
     console.log("Cannot refresh token: Missing URL or Refresh Token.");
-    if (callback) callback(new Error("Missing credentials"));
+    if (callback) { callback(new Error("Missing credentials")); }
     return;
   }
 
@@ -63,7 +62,7 @@ function refreshAccessToken(callback) {
     "grant_type=refresh_token&refresh_token=" +
     encodeURIComponent(haConfig.haRefreshToken) +
     "&client_id=" +
-    encodeURIComponent(haConfig.haUrl)
+    encodeURIComponent(clientId)
   );
 }
 

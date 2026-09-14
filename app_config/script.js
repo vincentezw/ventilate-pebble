@@ -1,4 +1,5 @@
 const form = document.querySelector("#config-form");
+const clientId = "https://vincentezw.github.io/ventilate-pebble/";
 
 const connectionSection = document.querySelector("#connection-section");
 const connectionFields = document.querySelector("#connection-fields");
@@ -159,7 +160,6 @@ function startOAuthFlow() {
   }
 
   const redirectUri = window.location.origin + window.location.pathname;
-  const clientId = redirectUri;
 
   const authUrl = `${url}/auth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
   window.location.href = authUrl;
@@ -167,9 +167,6 @@ function startOAuthFlow() {
 
 // Exchanges the authorization code for access and refresh tokens
 async function exchangeCodeForToken(haUrl, code) {
-  const redirectUri = window.location.origin + window.location.pathname;
-  const clientId = redirectUri;
-
   const response = await fetch(`${haUrl}/auth/token`, {
     method: "POST",
     headers: {
