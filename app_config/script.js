@@ -27,7 +27,8 @@ const sensorInputs = {
 let connected = false;
 let entities = [];
 let suggestionTimer = null;
-let haToken = ""; // Store long-lived token obtained via OAuth
+let haRefreshToken = null;
+let haAccessToken = null;
 
 function normaliseUrl(url) {
   return url.trim().replace(/\/+$/, "");
@@ -73,14 +74,19 @@ function loadPreloadedEntitiesAndConfig() {
     const preloadedUrl = params.get("url");
     const preloadedEntities = params.get("entities");
     const preloadedSensors = params.get("sensors");
-    const preloadedToken = params.get("token");
+    const preloadedToken = params.get("token") || params.get("accessToken");
+    const preloadedRefreshToken = params.get("refreshToken");
 
     if (preloadedUrl) {
       haUrlInput.value = preloadedUrl;
     }
 
     if (preloadedToken) {
-      haToken = preloadedToken;
+      haAccessToken = preloadedToken;
+    }
+
+    if (preloadedRefreshToken) {
+      haRefreshToken = preloadedRefreshToken;
     }
 
     if (preloadedEntities) {
@@ -97,7 +103,7 @@ function loadPreloadedEntitiesAndConfig() {
     }
 
     // Automatically reveal the sensors section if a URL and token are already stored
-    if (preloadedUrl && haToken) {
+    if (preloadedUrl && (haAccessToken || haRefreshToken)) {
       setConnected(true);
       validateSensors();
     }
@@ -140,7 +146,7 @@ function startOAuthFlow() {
   window.location.href = authUrl;
 }
 
-// Exchanges the authorization code for a long-lived refresh token
+// Exchanges the authorization code for access and refresh tokens
 async function exchangeCodeForToken(haUrl, code) {
   const redirectUri = window.location.origin + window.location.pathname;
   const clientId = redirectUri;
@@ -162,9 +168,11 @@ async function exchangeCodeForToken(haUrl, code) {
   }
 
   const data = await response.json();
-  
-  // Home Assistant refresh token acts as a long-lived token
-  return data.refresh_token || data.access_token;
+
+  return {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+  };
 }
 
 // Handles page reload after Home Assistant redirects back with ?code=...
@@ -180,11 +188,11 @@ async function handleOAuthCallback() {
   haUrlInput.value = storedUrl;
   setConnecting(true);
 
-  // Clean the ?code=... from the address bar
-  window.history.replaceState({}, document.title, window.location.pathname);
+  // Clean the ?code=... from the address bar while keeping existing hash
+  window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
 
   try {
-    haToken = await exchangeCodeForToken(storedUrl, code);
+    ({ access_token: haAccessToken, refresh_token: haRefreshToken } = await exchangeCodeForToken(storedUrl, code));
     setConnected(true);
 
     if (entities.length === 0) {
@@ -330,7 +338,8 @@ function editConnection() {
 function getConfiguration() {
   return {
     haUrl: normaliseUrl(haUrlInput.value),
-    haToken: haToken,
+    haAccessToken,
+    haRefreshToken,
 
     sensors: {
       indoorTemperature: sensorInputs.indoorTemperature.value.trim(),
@@ -345,7 +354,7 @@ function getQueryParam(variable, defaultValue) {
   const rawParams = window.location.search + "&" + window.location.hash.replace("#", "&");
   const urlParams = new URLSearchParams(rawParams);
   const value = urlParams.get(variable);
-  
+
   if (value !== null) {
     return value;
   }
@@ -357,9 +366,13 @@ function getQueryParam(variable, defaultValue) {
 function saveConfiguration() {
   const configuration = getConfiguration();
   const returnTo = getQueryParam("return_to", "pebblejs://close#");
+  
+  // Clean up localStorage return_to after reading
+  localStorage.removeItem("return_to");
+
   const locationUrl = returnTo + encodeURIComponent(JSON.stringify(configuration));
   showMessage(saveMessage, "Saving configuration…", "success");
-    
+
   window.location.href = locationUrl;
 }
 

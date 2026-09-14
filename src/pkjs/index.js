@@ -1,9 +1,11 @@
-const HA_URL = "https://ha.local.zwanenburg.ie";
+// const HA_URL = "https://ha.local.zwanenburg.ie";
 // let haConfig;
 let haConfig = {
-  haUrl: HA_URL,
-  haToken: HA_TOKEN
+  haUrl: null,
+  haAccessToken: null,
+  haRefreshToken: null
 };
+     
 const CONFIG_URL="https://vincentezw.github.io/ventilate-pebble/";
 const ENTITY_INDOOR_TEMPERATURE = "sensor.ws2350_v2_38_indoor_temperature";
 const ENTITY_INDOOR_HUMIDITY = "sensor.ws2350_v2_38_indoor_humidity";
@@ -23,9 +25,52 @@ const entities = {
 
 let humidityData;
 
+function refreshAccessToken(callback) {
+  if (!haConfig || !haConfig.haUrl || !haConfig.haRefreshToken) {
+    console.log("Cannot refresh token: Missing URL or Refresh Token.");
+    if (callback) callback(new Error("Missing credentials"));
+    return;
+  }
+
+  const req = new XMLHttpRequest();
+  req.open("POST", haConfig.haUrl + "/auth/token", true);
+  req.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+
+  req.onload = function() {
+    if (req.status === 200) {
+      try {
+        const data = JSON.parse(req.responseText);
+        haConfig.haAccessToken = data.access_token;
+
+        localStorage.setItem("ha_config", JSON.stringify(haConfig));
+        console.log("Successfully refreshed access token.");
+
+        if (callback) callback(null, data.access_token);
+      } catch (err) {
+        if (callback) callback(err);
+      }
+    } else {
+      console.log("Token refresh failed with HTTP status: " + req.status);
+      if (callback) callback(new Error("Refresh failed"));
+    }
+  };
+
+  req.onerror = function() {
+    if (callback) callback(new Error("Network error during token refresh"));
+  };
+
+  req.send(
+    "grant_type=refresh_token&refresh_token=" +
+    encodeURIComponent(haConfig.haRefreshToken) +
+    "&client_id=" +
+    encodeURIComponent(haConfig.haUrl)
+  );
+}
+
 function loadConfig() {
   const configString = localStorage.getItem('ha_config');
   if (configString) {
+    console.log("we have a config in localStorage: " + configString);
     try {
       haConfig = JSON.parse(configString);
       console.log('Loaded Home Assistant configuration from localStorage.');
@@ -62,8 +107,8 @@ function composeConfigUrl() {
   return CONFIG_URL + '?url=' + haConfig.haUrl;
 }
 
-function loadConfigWithEntities() {
-  if (!haConfig || !haConfig.haUrl || !haConfig.haToken) {
+function loadConfigWithEntities(retry = false) {
+  if (!haConfig || !haConfig.haUrl || !haConfig.haRefreshToken || !haConfig.haAccessToken) {
     console.log('Home Assistant URL or token not set in configuration.');
     Pebble.openURL(CONFIG_URL);
     return;
@@ -71,11 +116,12 @@ function loadConfigWithEntities() {
 
   const req = new XMLHttpRequest();
   req.open('GET', haConfig.haUrl + '/api/states', true);
-  req.setRequestHeader('Authorization', 'Bearer ' + haConfig.haToken);
+  req.setRequestHeader('Authorization', 'Bearer ' + haConfig.haAccessToken);
   req.setRequestHeader('Content-Type', 'application/json');
 
   req.onload = function() {
     if (req.status === 200) {
+      console.log("Successfully fetched states from Home Assistant.");
       try {
         const states = JSON.parse(req.responseText);
         var filtered = states
@@ -100,6 +146,18 @@ function loadConfigWithEntities() {
         Pebble.openURL(composeConfigUrl());
       }
     } else {
+      if (req.status === 401 && !retry) {
+        console.log('Unauthorized access. Attempting to refresh token.');
+        refreshAccessToken(function(err) {
+          if (err) {
+            console.log('Token refresh failed: ' + err.message);
+            // TODO handle error
+            return;
+          }
+          loadConfigWithEntities(true);
+        })
+      }
+
       console.log('Failed to fetch states natively. HTTP Status: ' + req.status);
       Pebble.openURL(composeConfigUrl());
     }
@@ -112,8 +170,13 @@ function loadConfigWithEntities() {
   req.send();
 }
 
-function connectHomeAssistant() {
-  const wsUrl = HA_URL.replace(/^http/, "ws") + "/api/websocket";
+function connectHomeAssistant(isRetry = false) {
+  if (!haConfig || !haConfig.haUrl) {
+    console.log("Home Assistant URL not configured.");
+    // TODO send error
+    return;
+  }
+  const wsUrl = haConfig.haUrl.replace(/^http/, "ws") + "/api/websocket";
   const ws = new WebSocket(wsUrl);
 
   ws.onopen = function() {
@@ -131,6 +194,19 @@ function connectHomeAssistant() {
         getInitialStates(ws);
         subscribeToStates(ws);
         break;
+      case "auth_invalid":
+        console.log("HA authentication failed");
+        refreshAccessToken(function(err) {
+          if (err) {
+            console.log("Token refresh failed: " + err.message);
+            ws.close();
+            return;
+          }
+          if (!isRetry) {
+            connectHomeAssistant(true);
+          }
+        });
+        break;
       case "event":
         handleEvent(message.event);
         break;
@@ -138,10 +214,6 @@ function connectHomeAssistant() {
         if (message.id === GET_STATES_ID) {
           handleInitialStates(message.result);
         }
-        break;
-      case "auth_invalid":
-        console.log("HA authentication failed");
-        ws.close();
         break;
     }
   };
@@ -158,7 +230,7 @@ function connectHomeAssistant() {
 function authenticate(ws) {
   ws.send(JSON.stringify({
     type: "auth",
-    access_token: HA_TOKEN
+    access_token: haConfig.haAccessToken
   }));
 }
 
@@ -372,4 +444,4 @@ Pebble.addEventListener('appmessage', function (e) {
   }
 });
 
-// loadConfig();
+loadConfig();
