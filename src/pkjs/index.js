@@ -113,17 +113,18 @@ Pebble.addEventListener('webviewclosed', function(e) {
   try {
     const decoded = decodeURIComponent(e.response);
     const newConfig = typeof decoded === 'string' ? JSON.parse(decoded) : decoded;
+    console.log('Received configuration from webview: ' + JSON.stringify(newConfig));
 
-    const existingConfig = localStorage.getItem('ha_config');
     haConfig = {
-      haUrl: newConfig.haUrl || existingConfig.haUrl || null,
-      haAccessToken: newConfig.haAccessToken || existingConfig.haAccessToken || null,
-      haRefreshToken: newConfig.haRefreshToken || existingConfig.haRefreshToken || null,
-      indoorHumidity: newConfig.indoorHumidity || existingConfig.indoorHumidity || null,
-      indoorTemperature: newConfig.indoorTemperature || existingConfig.indoorTemperature || null,
-      outdoorHumidity: newConfig.outdoorHumidity || existingConfig.outdoorHumidity || null,
-      outdoorTemperature: newConfig.outdoorTemperature || existingConfig.outdoorTemperature || null
+      haUrl: newConfig.haUrl || haConfig.haUrl || null,
+      haAccessToken: newConfig.haAccessToken || haConfig.haAccessToken || null,
+      haRefreshToken: newConfig.haRefreshToken || haConfig.haRefreshToken || null,
+      indoorHumidity: newConfig.indoorHumidity || haConfig.indoorHumidity || null,
+      indoorTemperature: newConfig.indoorTemperature || haConfig.indoorTemperature || null,
+      outdoorHumidity: newConfig.outdoorHumidity || haConfig.outdoorHumidity || null,
+      outdoorTemperature: newConfig.outdoorTemperature || haConfig.outdoorTemperature || null
     };
+
     localStorage.setItem('ha_config', JSON.stringify(haConfig));
 
     const result = initEntitiesFromConfig();
@@ -131,8 +132,13 @@ Pebble.addEventListener('webviewclosed', function(e) {
       console.log(result.error);
       sendError(result.error);
     }
+    
     entities = result.data;
     console.log("Saved Home Assistant configuration to localStorage.");
+
+    if (haConfig.haAccessToken && Object.keys(entities).length > 0) {
+      connectHomeAssistant();
+    }
   } catch (err) {
     console.log('Error parsing configuration response: ' + err.message);
   }
@@ -211,6 +217,7 @@ function loadConfigWithEntities(isRetry = false) {
 }
 
 function connectHomeAssistant(isRetry = false) {
+  console.log("haconfig", JSON.stringify(haConfig));
   if (!haConfig || !haConfig.haUrl) {
     console.log("Home Assistant URL not configured.");
     sendError("Home Assistant URL not configured.");

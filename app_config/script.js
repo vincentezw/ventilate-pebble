@@ -336,13 +336,10 @@ function getConfiguration() {
     haUrl: normaliseUrl(haUrlInput.value),
     haAccessToken,
     haRefreshToken,
-
-    sensors: {
-      indoorTemperature: sensorInputs.indoorTemperature.value.trim(),
-      indoorHumidity: sensorInputs.indoorHumidity.value.trim(),
-      outdoorTemperature: sensorInputs.outdoorTemperature.value.trim(),
-      outdoorHumidity: sensorInputs.outdoorHumidity.value.trim(),
-    },
+    indoorTemperature: sensorInputs.indoorTemperature.value.trim(),
+    indoorHumidity: sensorInputs.indoorHumidity.value.trim(),
+    outdoorTemperature: sensorInputs.outdoorTemperature.value.trim(),
+    outdoorHumidity: sensorInputs.outdoorHumidity.value.trim(),
   };
 }
 

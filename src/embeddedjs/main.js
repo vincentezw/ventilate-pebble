@@ -138,8 +138,32 @@ const appMessage = new Message({
       }
     } else if (command === 2) {
       render.begin();
-      render.fillRectangle(colours.white, 0, 0, render.width, render.height);
-      drawTextCentered("Error: " + data, fonts.gothicRegular, colours.red);
+      render.fillRectangle(colours.red, 0, 0, render.width, render.height);
+      const textWidth = render.getTextWidth(data, fonts.gothicRegular);
+
+      if (textWidth <= render.width - 10) {
+        drawTextCentered(data, fonts.gothicRegular, colours.black);
+      } else {
+        const middle = Math.floor(data.length / 2);
+        let splitIdx = data.lastIndexOf(' ', middle);
+
+        if (splitIdx === -1) {
+          splitIdx = data.indexOf(' ', middle);
+        }
+
+        if (splitIdx === -1) {
+          splitIdx = middle;
+        }
+
+        const line1 = data.slice(0, splitIdx).trim();
+        const line2 = data.slice(splitIdx).trim();
+
+        const fontHeight = render.getFontHeight(fonts.gothicRegular);
+        const centerY = Math.floor(render.height / 2);
+
+        drawTextCentered(line1, fonts.gothicRegular, colours.black, centerY - Math.floor(fontHeight / 2));
+        drawTextCentered(line2, fonts.gothicRegular, colours.black, centerY + Math.floor(fontHeight / 2));
+      }
       render.end();
       return;
     }
