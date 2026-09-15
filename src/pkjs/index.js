@@ -1,6 +1,7 @@
 let haConfig = {
   haUrl: null,
   haAccessToken: null,
+  haAccessTokenExpiry: null,
   haRefreshToken: null,
   indoorHumidity: null,
   indoorTemperature: null,
@@ -21,6 +22,7 @@ function sendError(errorMessage) {
 }
 
 function initEntitiesFromConfig() {
+  console.log("Initializing entities from configuration:", JSON.stringify(haConfig));
   const toCheck = [haConfig.indoorHumidity, haConfig.indoorTemperature, haConfig.outdoorHumidity, haConfig.outdoorTemperature];
   if (toCheck.some(entity => !entity)) {
     console.log("One or more entity IDs are missing in the configuration.");
@@ -36,6 +38,23 @@ function initEntitiesFromConfig() {
 }
 
 let humidityData;
+
+function isTokenExpired() {
+  if (!haConfig || !haConfig.haAccessTokenExpiry) {
+    return true;
+  }
+
+  const BUFFER_MS = 60 * 1000;
+  return Date.now() + BUFFER_MS >= haConfig.haAccessTokenExpiry;
+}
+
+function ensureValidAccessToken(callback) {
+  if (isTokenExpired()) {
+    refreshAccessToken(callback);
+  } else {
+    callback(null);
+  }
+}
 
 function refreshAccessToken(callback) {
   if (!haConfig || !haConfig.haUrl || !haConfig.haRefreshToken) {
@@ -54,10 +73,14 @@ function refreshAccessToken(callback) {
         const data = JSON.parse(req.responseText);
         haConfig.haAccessToken = data.access_token;
 
+        if (data.expires_in) {
+          haConfig.haAccessTokenExpiry = Date.now() + data.expires_in * 1000;
+        }
+
         localStorage.setItem("ha_config", JSON.stringify(haConfig));
         console.log("Successfully refreshed access token.");
 
-        if (callback) callback(null, data.access_token);
+        if (callback) callback(null);
       } catch (err) {
         if (callback) callback(err);
       }
@@ -115,6 +138,11 @@ Pebble.addEventListener('webviewclosed', function(e) {
     const newConfig = typeof decoded === 'string' ? JSON.parse(decoded) : decoded;
     console.log('Received configuration from webview: ' + JSON.stringify(newConfig));
 
+    const expiresInSec = newConfig.haAccessTokenExpiresIn ? parseInt(newConfig.haAccessTokenExpiresIn, 10) : null;
+    const tokenExpiry = expiresInSec 
+      ? Date.now() + expiresInSec * 1000 
+      : (haConfig && haConfig.haAccessTokenExpiry) || null;
+
     haConfig = {
       haUrl: newConfig.haUrl || haConfig.haUrl || null,
       haAccessToken: newConfig.haAccessToken || haConfig.haAccessToken || null,
@@ -122,7 +150,8 @@ Pebble.addEventListener('webviewclosed', function(e) {
       indoorHumidity: newConfig.indoorHumidity || haConfig.indoorHumidity || null,
       indoorTemperature: newConfig.indoorTemperature || haConfig.indoorTemperature || null,
       outdoorHumidity: newConfig.outdoorHumidity || haConfig.outdoorHumidity || null,
-      outdoorTemperature: newConfig.outdoorTemperature || haConfig.outdoorTemperature || null
+      outdoorTemperature: newConfig.outdoorTemperature || haConfig.outdoorTemperature || null,
+      haAccessTokenExpiry: tokenExpiry
     };
 
     localStorage.setItem('ha_config', JSON.stringify(haConfig));
@@ -149,7 +178,17 @@ function composeConfigUrl() {
     return CONFIG_URL;
   }
 
-  return CONFIG_URL + '#url=' + haConfig.haUrl;
+  const params = [
+    'url=' + encodeURIComponent(haConfig.haUrl),
+    'accessToken=' + encodeURIComponent(haConfig.haAccessToken || ''),
+    'refreshToken=' + encodeURIComponent(haConfig.haRefreshToken || ''),
+    'indoorHumidity=' + encodeURIComponent(haConfig.indoorHumidity || ''),
+    'indoorTemperature=' + encodeURIComponent(haConfig.indoorTemperature || ''),
+    'outdoorHumidity=' + encodeURIComponent(haConfig.outdoorHumidity || ''),
+    'outdoorTemperature=' + encodeURIComponent(haConfig.outdoorTemperature || '')
+  ];
+
+  return CONFIG_URL + '#' + params.join('&');
 }
 
 function loadConfigWithEntities(isRetry = false) {
@@ -159,65 +198,72 @@ function loadConfigWithEntities(isRetry = false) {
     return;
   }
 
-  const req = new XMLHttpRequest();
-  req.open('GET', haConfig.haUrl + '/api/states', true);
-  req.setRequestHeader('Authorization', 'Bearer ' + haConfig.haAccessToken);
-  req.setRequestHeader('Content-Type', 'application/json');
+  ensureValidAccessToken(function(err) {
+    if (err) {
+      console.log('Error ensuring valid access token: ' + err.message);
+      sendError('Reconnect to Home Assistant');
+      return;
+    }
 
-  req.onload = function() {
-    if (req.status === 200) {
-      console.log("Successfully fetched states from Home Assistant.");
-      try {
-        const states = JSON.parse(req.responseText);
-        var filtered = states
-          .filter(function(s) {
-            if (!s.entity_id || !s.entity_id.startsWith('sensor.')) { return false;  }
-            const deviceClass = s.attributes && s.attributes.device_class;
-            return deviceClass === 'temperature' || deviceClass === 'humidity';
+    const req = new XMLHttpRequest();
+    req.open('GET', haConfig.haUrl + '/api/states', true);
+    req.setRequestHeader('Authorization', 'Bearer ' + haConfig.haAccessToken);
+    req.setRequestHeader('Content-Type', 'application/json');
+
+    req.onload = function() {
+      if (req.status === 200) {
+        console.log("Successfully fetched states from Home Assistant.");
+        try {
+          const states = JSON.parse(req.responseText);
+          var filtered = states
+            .filter(function(s) {
+              if (!s.entity_id || !s.entity_id.startsWith('sensor.')) { return false;  }
+              const deviceClass = s.attributes && s.attributes.device_class;
+              return deviceClass === 'temperature' || deviceClass === 'humidity';
+            })
+            .map(function(s) {
+              const friendlyName = (s.attributes && s.attributes.friendly_name) || s.entity_id;
+              return {
+                id: s.entity_id,
+                name: friendlyName.length > 25 ? friendlyName.substring(0, 22) + '...' : friendlyName
+              };
+            });
+
+          const filteredEntities = JSON.stringify(filtered);
+          const url = CONFIG_URL + '#url=' + haConfig.haUrl + '&entities=' + encodeURIComponent(filteredEntities);
+          Pebble.openURL(url);
+        } catch (err) {
+          console.log('Error parsing states response: ' + err.message);
+          Pebble.openURL(composeConfigUrl());
+        }
+      } else {
+        console.log("Failed to fetch states from Home Assistant. HTTP Status: " + req.status);
+        if (req.status === 401 && !isRetry) {
+          console.log('Unauthorized access. Attempting to refresh token.');
+          refreshAccessToken(function(err) {
+            if (err) {
+              console.log('Token refresh failed: ' + err.message);
+              sendError('Token refresh failed: ' + err.message);
+              return;
+            }
+            loadConfigWithEntities(true);
           })
-          .map(function(s) {
-            const friendlyName = (s.attributes && s.attributes.friendly_name) || s.entity_id;
-            return {
-              id: s.entity_id,
-              name: friendlyName.length > 25 ? friendlyName.substring(0, 22) + '...' : friendlyName
-            };
-          });
+        }
 
-        const filteredEntities = JSON.stringify(filtered);
-        const url = CONFIG_URL + '#url=' + haConfig.haUrl + '&entities=' + encodeURIComponent(filteredEntities);
-        Pebble.openURL(url);
-      } catch (err) {
-        console.log('Error parsing states response: ' + err.message);
+        console.log('Failed to fetch states natively. HTTP Status: ' + req.status);
         Pebble.openURL(composeConfigUrl());
       }
-    } else {
-      console.log("Failed to fetch states from Home Assistant. HTTP Status: " + req.status);
-      if (req.status === 401 && !isRetry) {
-        console.log('Unauthorized access. Attempting to refresh token.');
-        refreshAccessToken(function(err) {
-          if (err) {
-            console.log('Token refresh failed: ' + err.message);
-            sendError('Token refresh failed: ' + err.message);
-            return;
-          }
-          loadConfigWithEntities(true);
-        })
-      }
+    };
 
-      console.log('Failed to fetch states natively. HTTP Status: ' + req.status);
-      Pebble.openURL(composeConfigUrl());
-    }
-  };
+    req.onerror = function() {
+      console.log('Network error occurred while fetching Home Assistant entities.');
+    };
 
-  req.onerror = function() {
-    console.log('Network error occurred while fetching Home Assistant entities.');
-  };
-
-  req.send();
+    req.send();
+  });
 }
 
 function connectHomeAssistant(isRetry = false) {
-  console.log("haconfig", JSON.stringify(haConfig));
   if (!haConfig || !haConfig.haUrl) {
     console.log("Home Assistant URL not configured.");
     sendError("Home Assistant URL not configured.");
@@ -231,55 +277,63 @@ function connectHomeAssistant(isRetry = false) {
     return;
   }
 
-  const wsUrl = haConfig.haUrl.replace(/^http/, "ws") + "/api/websocket";
-  const ws = new WebSocket(wsUrl);
-
-  ws.onopen = function() {
-    console.log("HA WebSocket connected");
-  };
-
-  ws.onmessage = function(event) {
-    const message = JSON.parse(event.data);
-
-    switch (message.type) {
-      case "auth_required":
-        authenticate(ws);
-        break;
-      case "auth_ok":
-        getInitialStates(ws);
-        subscribeToStates(ws);
-        break;
-      case "auth_invalid":
-        console.log("HA authentication failed");
-        refreshAccessToken(function(err) {
-          if (err) {
-            console.log("Token refresh failed: " + err.message);
-            ws.close();
-            return;
-          }
-          if (!isRetry) {
-            connectHomeAssistant(true);
-          }
-        });
-        break;
-      case "event":
-        handleEvent(message.event);
-        break;
-      case "result":
-        if (message.id === GET_STATES_ID) {
-          handleInitialStates(message.result);
-        }
-        break;
+  ensureValidAccessToken(function(err) {
+    if (err) {
+      console.log("Error ensuring valid access token: " + err.message);
+      sendError("Reconnect to Home Assistant");
+      return;
     }
-  };
 
-  ws.onerror = function(error) {
-    console.log(`HA WebSocket error: ${error}`);
-  };
+    const wsUrl = haConfig.haUrl.replace(/^http/, "ws") + "/api/websocket";
+    const ws = new WebSocket(wsUrl);
 
-  ws.onclose = function() {
-    console.log("HA WebSocket closed");
-  };
+    ws.onopen = function() {
+      console.log("HA WebSocket connected");
+    };
+
+    ws.onmessage = function(event) {
+      const message = JSON.parse(event.data);
+
+      switch (message.type) {
+        case "auth_required":
+          authenticate(ws);
+          break;
+        case "auth_ok":
+          getInitialStates(ws);
+          subscribeToStates(ws);
+          break;
+        case "auth_invalid":
+          console.log("HA authentication failed");
+          refreshAccessToken(function(err) {
+            if (err) {
+              console.log("Token refresh failed: " + err.message);
+              ws.close();
+              return;
+            }
+            if (!isRetry) {
+              connectHomeAssistant(true);
+            }
+          });
+          break;
+        case "event":
+          handleEvent(message.event);
+          break;
+        case "result":
+          if (message.id === GET_STATES_ID) {
+            handleInitialStates(message.result);
+          }
+          break;
+      }
+    };
+
+    ws.onerror = function(error) {
+      console.log(`HA WebSocket error: ${error}`);
+    };
+
+    ws.onclose = function() {
+      console.log("HA WebSocket closed");
+    };
+  });
 }
 
 function authenticate(ws) {

@@ -30,6 +30,7 @@ let entities = [];
 let suggestionTimer = null;
 let haRefreshToken = null;
 let haAccessToken = null;
+let haAccessTokenExpiresIn = null;
 
 function normaliseUrl(url) {
   return url.trim().replace(/\/+$/, "");
@@ -75,19 +76,9 @@ function loadPreloadedEntitiesAndConfig() {
     const preloadedUrl = params.get("url");
     const preloadedEntities = params.get("entities");
     const preloadedSensors = params.get("sensors");
-    const preloadedToken = params.get("token") || params.get("accessToken");
-    const preloadedRefreshToken = params.get("refreshToken");
 
     if (preloadedUrl) {
       haUrlInput.value = preloadedUrl;
-    }
-
-    if (preloadedToken) {
-      haAccessToken = preloadedToken;
-    }
-
-    if (preloadedRefreshToken) {
-      haRefreshToken = preloadedRefreshToken;
     }
 
     if (preloadedEntities) {
@@ -109,7 +100,7 @@ function loadPreloadedEntitiesAndConfig() {
       if (savedSensors.outdoorHumidity) sensorInputs.outdoorHumidity.value = savedSensors.outdoorHumidity;
     }
 
-    if (preloadedUrl && (entities.length > 0 || haAccessToken || haRefreshToken)) {
+    if (preloadedUrl && (entities.length > 0 || preloadedSensors)) {
       setConnected(true);
       validateSensors();
     }
@@ -132,7 +123,6 @@ function entityMatches(entity, query) {
   return haystack.includes(query.toLowerCase());
 }
 
-// Redirects the browser tab to Home Assistant's native OAuth authorization endpoint
 function startOAuthFlow() {
   hideMessage(connectionMessage);
   const url = normaliseUrl(haUrlInput.value);
@@ -188,6 +178,7 @@ async function exchangeCodeForToken(haUrl, code) {
   return {
     access_token: data.access_token,
     refresh_token: data.refresh_token,
+    expires_in: data.expires_in,
   };
 }
 
@@ -208,7 +199,7 @@ async function handleOAuthCallback() {
   window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
 
   try {
-    ({ access_token: haAccessToken, refresh_token: haRefreshToken } = await exchangeCodeForToken(storedUrl, code));
+    ({ access_token: haAccessToken, refresh_token: haRefreshToken, expires_in: haAccessTokenExpiresIn } = await exchangeCodeForToken(storedUrl, code));
     setConnected(true);
 
     if (entities.length === 0) {
@@ -335,6 +326,7 @@ function getConfiguration() {
   return {
     haUrl: normaliseUrl(haUrlInput.value),
     haAccessToken,
+    haAccessTokenExpiresIn,
     haRefreshToken,
     indoorTemperature: sensorInputs.indoorTemperature.value.trim(),
     indoorHumidity: sensorInputs.indoorHumidity.value.trim(),
@@ -360,7 +352,6 @@ function saveConfiguration() {
   const configuration = getConfiguration();
   const returnTo = getQueryParam("return_to", "pebblejs://close#");
   
-  // Clean up localStorage return_to after reading
   localStorage.removeItem("return_to");
 
   const locationUrl = returnTo + encodeURIComponent(JSON.stringify(configuration));

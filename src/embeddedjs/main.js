@@ -154,11 +154,9 @@ const appMessage = new Message({
         if (splitIdx === -1) {
           splitIdx = middle;
         }
-
         const line1 = data.slice(0, splitIdx).trim();
         const line2 = data.slice(splitIdx).trim();
-
-        const fontHeight = render.getFontHeight(fonts.gothicRegular);
+        const fontHeight = 25;
         const centerY = Math.floor(render.height / 2);
 
         drawTextCentered(line1, fonts.gothicRegular, colours.black, centerY - Math.floor(fontHeight / 2));
@@ -403,7 +401,7 @@ function renderMainScreen() {
     cardsY[1] + 32
   );
 
-  const duration = `Ventilate for ${Math.round(entityData.recommendedDuration / 60)} min`;
+  const duration = `Ventilation time: ${Math.round(entityData.recommendedDuration / 60)} min`;
   const estimate = `${Math.round(entityData.expectedIndoorHumidity)}% RH`;
   const estimateWidth = render.getTextWidth(estimate, fonts.gothicRegular);
   const trendIconPadding = (render.width - estimateWidth) / 2 - 24;
