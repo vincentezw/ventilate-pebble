@@ -1,26 +1,39 @@
-const clientId = "https://vincentezw.github.io/ventilate-pebble/";
 let haConfig = {
   haUrl: null,
   haAccessToken: null,
-  haRefreshToken: null
+  haRefreshToken: null,
+  indoorHumidity: null,
+  indoorTemperature: null,
+  outdoorHumidity: null,
+  outdoorTemperature: null
 };
+let entities = {};
      
+const clientId = "https://vincentezw.github.io/ventilate-pebble/";
 const CONFIG_URL="https://vincentezw.github.io/ventilate-pebble/";
-const ENTITY_INDOOR_TEMPERATURE = "sensor.ws2350_v2_38_indoor_temperature";
-const ENTITY_INDOOR_HUMIDITY = "sensor.ws2350_v2_38_indoor_humidity";
-const ENTITY_OUTDOOR_TEMPERATURE = "sensor.ws2350_v2_38_outdoor_temperature";
-const ENTITY_OUTDOOR_HUMIDITY = "sensor.ws2350_v2_38_humidity";
-
 const GET_STATES_ID = 1;
 const SUBSCRIBE_STATES_ID = 2;
 const GET_INDOOR_HUMIDITY_ID = 3;
 
-const entities = {
-  [ENTITY_INDOOR_TEMPERATURE]: null,
-  [ENTITY_INDOOR_HUMIDITY]: null,
-  [ENTITY_OUTDOOR_TEMPERATURE]: null,
-  [ENTITY_OUTDOOR_HUMIDITY]: null
-};
+function sendError(errorMessage) {
+  console.log("Sending error to Pebble: " + errorMessage);
+  Pebble.sendAppMessage({command: 2, data: errorMessage});
+}
+
+function initEntitiesFromConfig() {
+  const toCheck = [haConfig.indoorHumidity, haConfig.indoorTemperature, haConfig.outdoorHumidity, haConfig.outdoorTemperature];
+  if (toCheck.some(entity => !entity)) {
+    console.log("One or more entity IDs are missing in the configuration.");
+    return {data: {}, error: "One or more entity IDs are missing in the configuration."};
+  }
+
+  var data = {};
+  data[haConfig.indoorTemperature] = null;
+  data[haConfig.indoorHumidity] = null;
+  data[haConfig.outdoorTemperature] = null;
+  data[haConfig.outdoorHumidity] = null;
+  return {data, error: null};
+}
 
 let humidityData;
 
@@ -69,7 +82,6 @@ function refreshAccessToken(callback) {
 function loadConfig() {
   const configString = localStorage.getItem('ha_config');
   if (configString) {
-    console.log("we have a config in localStorage: " + configString);
     try {
       haConfig = JSON.parse(configString);
       console.log('Loaded Home Assistant configuration from localStorage.');
@@ -77,6 +89,15 @@ function loadConfig() {
     catch (err) {
       console.log('Error parsing Home Assistant configuration from localStorage: ' + err.message);
     }
+    const result = initEntitiesFromConfig(); 
+    console.log("result", JSON.stringify(result));
+    if (result.error) {
+      console.log(result.error);
+      sendError(result.error);
+      console.log("entities remains", JSON.stringify(entities));
+    }
+
+    entities = result.data;
   }
 }
 
@@ -90,9 +111,28 @@ Pebble.addEventListener('webviewclosed', function(e) {
   }
 
   try {
-    const config = JSON.parse(decodeURIComponent(e.response));
-    localStorage.setItem('ha_config', JSON.stringify(config));
-    console.log("Saved Home Assistant configuration to localStorage.", JSON.stringify(config));
+    const decoded = decodeURIComponent(e.response);
+    const newConfig = typeof decoded === 'string' ? JSON.parse(decoded) : decoded;
+
+    const existingConfig = localStorage.getItem('ha_config');
+    haConfig = {
+      haUrl: newConfig.haUrl || existingConfig.haUrl || null,
+      haAccessToken: newConfig.haAccessToken || existingConfig.haAccessToken || null,
+      haRefreshToken: newConfig.haRefreshToken || existingConfig.haRefreshToken || null,
+      indoorHumidity: newConfig.indoorHumidity || existingConfig.indoorHumidity || null,
+      indoorTemperature: newConfig.indoorTemperature || existingConfig.indoorTemperature || null,
+      outdoorHumidity: newConfig.outdoorHumidity || existingConfig.outdoorHumidity || null,
+      outdoorTemperature: newConfig.outdoorTemperature || existingConfig.outdoorTemperature || null
+    };
+    localStorage.setItem('ha_config', JSON.stringify(haConfig));
+
+    const result = initEntitiesFromConfig();
+    if (result.error) {
+      console.log(result.error);
+      sendError(result.error);
+    }
+    entities = result.data;
+    console.log("Saved Home Assistant configuration to localStorage.");
   } catch (err) {
     console.log('Error parsing configuration response: ' + err.message);
   }
@@ -103,10 +143,10 @@ function composeConfigUrl() {
     return CONFIG_URL;
   }
 
-  return CONFIG_URL + '?url=' + haConfig.haUrl;
+  return CONFIG_URL + '#url=' + haConfig.haUrl;
 }
 
-function loadConfigWithEntities(retry = false) {
+function loadConfigWithEntities(isRetry = false) {
   if (!haConfig || !haConfig.haUrl || !haConfig.haRefreshToken || !haConfig.haAccessToken) {
     console.log('Home Assistant URL or token not set in configuration.');
     Pebble.openURL(CONFIG_URL);
@@ -137,20 +177,21 @@ function loadConfigWithEntities(retry = false) {
             };
           });
 
-        const entities = JSON.stringify(filtered);
-        const url = CONFIG_URL + '#url=' + haConfig.haUrl + '&entities=' + encodeURIComponent(entities);
+        const filteredEntities = JSON.stringify(filtered);
+        const url = CONFIG_URL + '#url=' + haConfig.haUrl + '&entities=' + encodeURIComponent(filteredEntities);
         Pebble.openURL(url);
       } catch (err) {
         console.log('Error parsing states response: ' + err.message);
         Pebble.openURL(composeConfigUrl());
       }
     } else {
-      if (req.status === 401 && !retry) {
+      console.log("Failed to fetch states from Home Assistant. HTTP Status: " + req.status);
+      if (req.status === 401 && !isRetry) {
         console.log('Unauthorized access. Attempting to refresh token.');
         refreshAccessToken(function(err) {
           if (err) {
             console.log('Token refresh failed: ' + err.message);
-            // TODO handle error
+            sendError('Token refresh failed: ' + err.message);
             return;
           }
           loadConfigWithEntities(true);
@@ -172,9 +213,17 @@ function loadConfigWithEntities(retry = false) {
 function connectHomeAssistant(isRetry = false) {
   if (!haConfig || !haConfig.haUrl) {
     console.log("Home Assistant URL not configured.");
-    // TODO send error
+    sendError("Home Assistant URL not configured.");
     return;
   }
+
+  if (!haConfig.haAccessToken || !haConfig.haRefreshToken) {
+    console.log("config", JSON.stringify(haConfig));
+    console.log("Home Assistant access token or refresh token not configured.");
+    sendError("Reconnect to Home Assistant");
+    return;
+  }
+
   const wsUrl = haConfig.haUrl.replace(/^http/, "ws") + "/api/websocket";
   const ws = new WebSocket(wsUrl);
 
@@ -236,8 +285,7 @@ function authenticate(ws) {
 function getInitialStates(ws) {
   ws.send(JSON.stringify({
     id: GET_STATES_ID,
-    type: "get_states"
-  }));
+    type: "get_states" }));
   console.log("Requested initial states from HA");
 }
 
@@ -262,14 +310,14 @@ function handleInitialStates(states) {
   if (allStatesAvailable()) {
     humidityData = {
       indoor: {
-        temperature: entities[ENTITY_INDOOR_TEMPERATURE].value,
-        humidity: entities[ENTITY_INDOOR_HUMIDITY].value,
-        humLastUpdated: entities[ENTITY_INDOOR_HUMIDITY].lastUpdated
+        temperature: entities[haConfig.indoorTemperature].value,
+        humidity: entities[haConfig.indoorHumidity].value,
+        humLastUpdated: entities[haConfig.indoorHumidity].lastUpdated
       },
       outdoor: {
-        temperature: entities[ENTITY_OUTDOOR_TEMPERATURE].value,
-        humidity: entities[ENTITY_OUTDOOR_HUMIDITY].value,
-        humLastUpdated: entities[ENTITY_OUTDOOR_HUMIDITY].lastUpdated
+        temperature: entities[haConfig.outdoorTemperature].value,
+        humidity: entities[haConfig.outdoorHumidity].value,
+        humLastUpdated: entities[haConfig.outdoorHumidity].lastUpdated
       }
     };
     calculateVentilation(humidityData);
@@ -308,14 +356,14 @@ function handleEvent(event) {
   if (allStatesAvailable()) {
     humidityData = {
       indoor: {
-        temperature: entities[ENTITY_INDOOR_TEMPERATURE].value,
-        humidity: entities[ENTITY_INDOOR_HUMIDITY].value,
-        humLastUpdated: entities[ENTITY_INDOOR_HUMIDITY].lastUpdated
+        temperature: entities[haConfig.indoorTemperature].value,
+        humidity: entities[haConfig.indoorHumidity].value,
+        humLastUpdated: entities[haConfig.indoorHumidity].lastUpdated
       },
       outdoor: {
-        temperature: entities[ENTITY_OUTDOOR_TEMPERATURE].value,
-        humidity: entities[ENTITY_OUTDOOR_HUMIDITY].value,
-        humLastUpdated: entities[ENTITY_OUTDOOR_HUMIDITY].lastUpdated
+        temperature: entities[haConfig.outdoorTemperature].value,
+        humidity: entities[haConfig.outdoorHumidity].value,
+        humLastUpdated: entities[haConfig.outdoorHumidity].lastUpdated
       }
     };
 
@@ -324,6 +372,8 @@ function handleEvent(event) {
 }
 
 function allStatesAvailable() {
+  const keys = Object.keys(entities || {});
+  if (keys.length === 0) { return false;  }
   return Object.values(entities).every(value => value !== null);
 }
 
@@ -430,6 +480,7 @@ function calculateResult(data) {
 }
 
 Pebble.addEventListener("ready", function() {
+  loadConfig();
   connectHomeAssistant();
 });
 
@@ -443,4 +494,3 @@ Pebble.addEventListener('appmessage', function (e) {
   }
 });
 
-loadConfig();

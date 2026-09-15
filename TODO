@@ -1,1 +1,3 @@
-when we get an update and are on the main screen, the animation triggers again. This means it goes double speed, but also potentially at the wrong colour, as this can change, and means it flashes
+- double line errors
+- reword main page "ventilate for X minutes"
+- refresh after saving entities

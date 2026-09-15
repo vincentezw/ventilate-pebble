@@ -287,12 +287,9 @@ function hideSuggestions(input) {
 }
 
 function validateSensors() {
-  const values = Object.values(sensorInputs).map((input) => input.value.trim());
-  const valid = values.every(Boolean);
+  saveButton.disabled = !connected;
 
-  saveButton.disabled = !connected || !valid;
-
-  return valid;
+  return true;
 }
 
 function setupSensorInputs() {

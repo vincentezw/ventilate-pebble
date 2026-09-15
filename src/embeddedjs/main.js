@@ -118,8 +118,10 @@ new Button({
 const appMessage = new Message({
   keys: ["command", "data"],
   onReadable() {
+    console.log("Received message from phone.");
     const msg = this.read();
     const command = msg.get("command");
+    console.log("Command received:", command);
     const data = msg.get("data");
     if (command === 0) {
       try {
@@ -134,6 +136,12 @@ const appMessage = new Message({
       } else if (state === "finished") {
         renderTimerFinishedScreen();
       }
+    } else if (command === 2) {
+      render.begin();
+      render.fillRectangle(colours.white, 0, 0, render.width, render.height);
+      drawTextCentered("Error: " + data, fonts.gothicRegular, colours.red);
+      render.end();
+      return;
     }
   },
   onWritable() {
