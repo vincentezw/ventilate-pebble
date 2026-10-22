@@ -25,6 +25,7 @@ def configure(ctx):
 
 def build(ctx):
     ctx.load('pebble_sdk')
+    ctx.load('bundle_config_page', tooldir='waftools')
 
     build_worker = os.path.exists('worker_src')
     binaries = []
@@ -52,3 +53,4 @@ def build(ctx):
                                          'src/pkjs/**/*.json',
                                          'src/common/**/*.js']),
                    js_entry_file='src/pkjs/index.js')
+    ctx.add_post_fun(lambda bld: bld.bundle_config_page())

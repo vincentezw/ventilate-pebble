@@ -11,7 +11,6 @@ let haConfig = {
 let entities = {};
 let endedVentilation = null;
      
-const clientId = "https://vincentezw.github.io/ventilate-pebble/";
 const CONFIG_URL="https://vincentezw.github.io/ventilate-pebble/";
 const GET_STATES_ID = 1;
 const SUBSCRIBE_STATES_ID = 2;
@@ -53,6 +52,49 @@ function ensureValidAccessToken(callback) {
   } else {
     callback(null);
   }
+}
+
+function exchangeCodeForToken(url, code, clientId, callback, replyFn) {
+  const req = new XMLHttpRequest();
+  req.open("POST", url + "/auth/token", true);
+  req.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+
+  req.onload = function() {
+    if (req.status === 200) {
+      try {
+        const data = JSON.parse(req.responseText);
+        const tokens = {
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          expires_in: data.expires_in
+        };
+
+        if (callback) {
+          callback(null, url, tokens, replyFn);
+        }
+      } catch (err) {
+        if (callback) {
+          callback(err);
+        }
+      }
+    } else {
+      if (callback) {
+        callback(new Error(`Failed to exchange authorization code (HTTP ${req.status}).`));
+      }
+    }
+  };
+
+  req.onerror = function() {
+    if (callback) {
+      callback(new Error("Network error during authorization code exchange"));
+    }
+  };
+
+  req.send(
+    "grant_type=authorization_code" +
+    "&code=" + encodeURIComponent(code) +
+    "&client_id=" + encodeURIComponent(clientId)
+  );
 }
 
 function refreshAccessToken(callback) {
@@ -122,6 +164,44 @@ Pebble.addEventListener('showConfiguration', function(e) {
   loadConfigWithEntities();
 });
 
+function tokenCallback(err, url, tokens, replyFn) {
+  if (err) {
+    console.error('Failed to exchange code for token: ' + err.message);
+    return;
+  }
+
+  haConfig = haConfig || {};
+  haConfig.haUrl = url;
+  haConfig.haAccessToken = tokens.access_token;
+  haConfig.haRefreshToken = tokens.refresh_token;
+  haConfig.haAccessTokenExpiry = tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : null;
+
+  localStorage.setItem('ha_config', JSON.stringify(haConfig));
+
+  const result = initEntitiesFromConfig();
+  if (result.error) {
+    console.log(result.error);
+    sendError(result.error);
+  }
+  entities = result.data;
+
+  if (haConfig.haAccessToken && Object.keys(entities).length > 0) {
+    connectHomeAssistant();
+  }
+
+  if (replyFn) {
+    replyFn({data: 'ok', error: null});
+  }
+}
+
+Pebble.addEventListener('configmessage', function(e) {
+  const message = (e && e.data && typeof e.data === 'object') ? e.data : {};
+  if (message.clientId && message.code && message.url) {
+    exchangeCodeForToken(message.url, message.code, message.clientId, tokenCallback, e.respond);
+  }
+  loadConfigWithEntities(false, true);
+});
+
 Pebble.addEventListener('webviewclosed', function(e) {
   if (!e || !e.response) {
     return;
@@ -130,17 +210,20 @@ Pebble.addEventListener('webviewclosed', function(e) {
   try {
     const decoded = decodeURIComponent(e.response);
     const newConfig = typeof decoded === 'string' ? JSON.parse(decoded) : decoded;
+    console.log("Received configuration from webview: " + JSON.stringify(newConfig));
 
-    const expiresInSec = newConfig.haAccessTokenExpiresIn ? parseInt(newConfig.haAccessTokenExpiresIn, 10) : null;
-    const tokenExpiry = expiresInSec 
-      ? Date.now() + expiresInSec * 1000 
-      : (haConfig && haConfig.haAccessTokenExpiry) || null;
+    if (newConfig.code && newConfig.url) {
+      const clientId = "https://vincentezw.github.io/ventilate-pebble/";
+
+      exchangeCodeForToken(newConfig.url, newConfig.code, clientId, tokenCallback);
+      return;
+    }
 
     haConfig = {
-      haUrl: newConfig.haUrl || haConfig.haUrl || null,
-      haAccessToken: newConfig.haAccessToken || haConfig.haAccessToken || null,
-      haRefreshToken: newConfig.haRefreshToken || haConfig.haRefreshToken || null,
-      haAccessTokenExpiry: tokenExpiry,
+      haUrl: haConfig.haUrl,
+      haAccessToken: haConfig.haAccessToken,
+      haRefreshToken: haConfig.haRefreshToken,
+      haAccessTokenExpiry: haConfig.haAccessTokenExpiry,
       indoorHumidity: newConfig.indoorHumidity || haConfig.indoorHumidity || null,
       indoorTemperature: newConfig.indoorTemperature || haConfig.indoorTemperature || null,
       outdoorHumidity: newConfig.outdoorHumidity || haConfig.outdoorHumidity || null,
@@ -182,7 +265,7 @@ function composeConfigUrl() {
   return CONFIG_URL + '#' + params.join('&');
 }
 
-function loadConfigWithEntities(isRetry = false) {
+function loadConfigWithEntities(isRetry = false, sendToConfig = false) {
   if (!haConfig || !haConfig.haUrl || !haConfig.haRefreshToken || !haConfig.haAccessToken) {
     Pebble.openURL(CONFIG_URL);
     return;
@@ -218,6 +301,15 @@ function loadConfigWithEntities(isRetry = false) {
             });
 
           const filteredEntities = JSON.stringify(filtered);
+          if (sendToConfig) {
+            Pebble.sendConfigMessage({
+              type: "entities",
+              data: filtered,
+              error: null
+            });
+            return;
+          }
+
           const url = composeConfigUrl() + '&entities=' + encodeURIComponent(filteredEntities);
           Pebble.openURL(url);
         } catch (err) {
@@ -350,7 +442,6 @@ function handleInitialStates(states) {
       continue;
     }
 
-    console.log('state', JSON.stringify(state));
     const value = parseFloat(state.state);
     const lastUpdated = state.last_reported;
     if (!Number.isNaN(value)) {
