@@ -1,11 +1,12 @@
 {
   "name": "Ventilate",
   "author": "vincentezw",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "keywords": ["ventilate", "home assistant", "timer"],
   "private": false,
   "dependencies": {},
   "pebble": {
+    "configPage": "config.html",
     "displayName": "Ventilate",
     "uuid": "f6138dd3-e1bc-4849-807b-90460c8a2421",
     "projectType": "moddable",

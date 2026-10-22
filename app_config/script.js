@@ -1,5 +1,4 @@
 const form = document.querySelector("#config-form");
-const clientId = "https://vincentezw.github.io/ventilate-pebble/";
 
 const connectionSection = document.querySelector("#connection-section");
 const connectionFields = document.querySelector("#connection-fields");
@@ -150,36 +149,10 @@ function startOAuthFlow() {
   }
 
   const redirectUri = window.location.origin + window.location.pathname;
+  const clientId = redirectUri;
 
   const authUrl = `${url}/auth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
   window.location.href = authUrl;
-}
-
-// Exchanges the authorization code for access and refresh tokens
-async function exchangeCodeForToken(haUrl, code) {
-  const response = await fetch(`${haUrl}/auth/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code: code,
-      client_id: clientId,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to exchange authorization code (HTTP ${response.status}).`);
-  }
-
-  const data = await response.json();
-
-  return {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token,
-    expires_in: data.expires_in,
-  };
 }
 
 // Handles page reload after Home Assistant redirects back with ?code=...
@@ -199,17 +172,28 @@ async function handleOAuthCallback() {
   window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
 
   try {
-    ({ access_token: haAccessToken, refresh_token: haRefreshToken, expires_in: haAccessTokenExpiresIn } = await exchangeCodeForToken(storedUrl, code));
-    setConnected(true);
+    const bridge = (typeof Pebble !== 'undefined' && Pebble &&
+      typeof Pebble.sendMessage === 'function' &&
+      typeof Pebble.addEventListener === 'function') ? Pebble : null;
 
-    if (entities.length === 0) {
-      showMessage(
-        sensorMessage,
-        "Connected! Type entity IDs manually above. Auto-complete suggestions will appear next time you open settings. Be sure to save the configuration to persist the connection to Home Assistant.",
-        "info"
-      );
+    if (bridge) {
+      const clientId = window.location.origin + window.location.pathname;
+      const reply = await bridge.sendMessage(JSON.stringify({clientId, code, url: storedUrl}));
+      if (!reply) {
+        console.error('No reply from the watch app');
+        showMessage(connectionMessage, "No reply from Pebble app");
+        setConnected(false);
+        return;
+      }
+      if (reply.error) {
+        console.error(String(reply.error));
+        showMessage(connectionMessage, reply.error);
+        setConnected(false);
+        return;
+      }
+			setConnected(true);
     } else {
-      hideMessage(sensorMessage);
+      saveConfiguration(code, storedUrl);
     }
   } catch (error) {
     console.error(error);
@@ -325,9 +309,6 @@ function editConnection() {
 function getConfiguration() {
   return {
     haUrl: normaliseUrl(haUrlInput.value),
-    haAccessToken,
-    haAccessTokenExpiresIn,
-    haRefreshToken,
     indoorTemperature: sensorInputs.indoorTemperature.value.trim(),
     indoorHumidity: sensorInputs.indoorHumidity.value.trim(),
     outdoorTemperature: sensorInputs.outdoorTemperature.value.trim(),
@@ -348,15 +329,17 @@ function getQueryParam(variable, defaultValue) {
   return savedValue !== null ? savedValue : defaultValue;
 }
 
-function saveConfiguration() {
-  const configuration = getConfiguration();
+function saveConfiguration(code, url) {
   const returnTo = getQueryParam("return_to", "pebblejs://close#");
-  
   localStorage.removeItem("return_to");
-
-  const locationUrl = returnTo + encodeURIComponent(JSON.stringify(configuration));
+  let locationUrl;
+  if (code && url) {
+    locationUrl = returnTo + encodeURIComponent(JSON.stringify({code, url}));
+  } else {
+    const configuration = getConfiguration();
+    locationUrl = returnTo + encodeURIComponent(JSON.stringify(configuration));
+  }
   showMessage(saveMessage, "Saving configuration…", "success");
-
   window.location.href = locationUrl;
 }
 
@@ -373,6 +356,25 @@ form.addEventListener("submit", (event) => {
 
   saveConfiguration();
 });
+
+if (typeof Pebble !== 'undefined') {
+  Pebble.addEventListener("message", function(event) {
+    if (event.data && event.data.type === "entities") {
+      try {
+        entities = event.data.data.map(function(item) {
+          if (Array.isArray(item)) {
+            return { id: item[0], name: item[1] || item[0] };
+          }
+          return item;
+        });
+      } catch (err) {
+        console.error("Failed to parse entities from Pebble message:", err);
+      }
+    }
+  });
+} else {
+  console.log("Running in a standalone browser. Pebble bridge mocked/unavailable.");
+}
 
 setupSensorInputs();
 
