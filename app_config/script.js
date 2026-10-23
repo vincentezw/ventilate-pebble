@@ -375,6 +375,11 @@ if (typeof Pebble !== 'undefined') {
 } else {
   console.log("Running in a standalone browser. Pebble bridge mocked/unavailable.");
 }
+const originalConsoleError = console.error;
+console.error = function(...args) {
+  originalConsoleError.apply(console, args);
+  showMessage(connectionMessage, "ERR: " + args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' '), "error");
+};
 
 setupSensorInputs();
 
