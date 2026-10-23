@@ -272,8 +272,6 @@ function composeConfigUrl() {
 
   const params = [
     'url=' + encodeURIComponent(haConfig.url),
-    'accessToken=' + encodeURIComponent(haConfig.accessToken || ''),
-    'refreshToken=' + encodeURIComponent(haConfig.refreshToken || ''),
     'indoorHumidity=' + encodeURIComponent(entitiesConfig.indoorHum || ''),
     'indoorTemperature=' + encodeURIComponent(entitiesConfig.indoorTemp || ''),
     'outdoorHumidity=' + encodeURIComponent(entitiesConfig.outdoorHum || ''),
@@ -285,7 +283,8 @@ function composeConfigUrl() {
 
 function loadConfigWithEntities(isRetry = false, sendToConfig = false) {
   if (!haConfig || !haConfig.url || !haConfig.refreshToken || !haConfig.accessToken) {
-    Pebble.openURL(CONFIG_URL);
+    const CONFIG_URL_DBG = "https://vincentezw.github.io/ventilate-pebble/#v=" + Date.now();
+    Pebble.openURL(CONFIG_URL_DBG);
     return;
   }
   console.log("fetch entities");

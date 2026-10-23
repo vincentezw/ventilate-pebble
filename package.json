@@ -1,7 +1,7 @@
 {
   "name": "Ventilate",
   "author": "vincentezw",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "keywords": ["ventilate", "home assistant", "timer"],
   "private": false,
   "dependencies": {},

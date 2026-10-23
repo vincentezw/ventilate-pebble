@@ -27,9 +27,6 @@ const sensorInputs = {
 let connected = false;
 let entities = [];
 let suggestionTimer = null;
-let haRefreshToken = null;
-let haAccessToken = null;
-let haAccessTokenExpiresIn = null;
 
 function normaliseUrl(url) {
   return url.trim().replace(/\/+$/, "");
