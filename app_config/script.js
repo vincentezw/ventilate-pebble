@@ -174,7 +174,8 @@ async function handleOAuthCallback() {
       typeof Pebble.sendMessage === 'function' &&
       typeof Pebble.addEventListener === 'function') ? Pebble : null;
 
-    if (bridge) {
+    // if (bridge) {
+    if (false) {
       const clientId = window.location.origin + window.location.pathname;
       const reply = await bridge.sendMessage(JSON.stringify({clientId, code, url: storedUrl}));
       if (!reply) {
