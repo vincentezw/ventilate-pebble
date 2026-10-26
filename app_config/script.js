@@ -1,3 +1,4 @@
+const debugBox = document.querySelector("#debugbox");
 const form = document.querySelector("#config-form");
 
 const connectionSection = document.querySelector("#connection-section");
@@ -160,6 +161,8 @@ async function handleOAuthCallback() {
   const storedUrl = localStorage.getItem("ha_url") || haUrlInput.value;
 
   if (!code || !storedUrl) {
+    const debugMsg = `Debug Info: code=${code}, storedUrl=${storedUrl}`;
+    debugBox.textContent = debugMsg;
     return;
   }
 
@@ -382,11 +385,6 @@ if (typeof Pebble !== 'undefined') {
 } else {
   console.log("Running in a standalone browser. Pebble bridge mocked/unavailable.");
 }
-const originalConsoleError = console.error;
-console.error = function(...args) {
-  originalConsoleError.apply(console, args);
-  showMessage(connectionMessage, "ERR: " + args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' '), "error");
-};
 
 setupSensorInputs();
 
