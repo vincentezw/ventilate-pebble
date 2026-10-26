@@ -8,6 +8,7 @@ const connectionStatus = document.querySelector("#connection-status");
 const connectionMessage = document.querySelector("#connection-message");
 const connectButton = document.querySelector("#connect-button");
 const editConnectionButton = document.querySelector("#edit-connection");
+const saveConnectionButton = document.querySelector("#save-connection");
 
 const sensorsSection = document.querySelector("#sensors-section");
 const sensorMessage = document.querySelector("#sensor-message");
@@ -190,7 +191,15 @@ async function handleOAuthCallback() {
       }
 			setConnected(true);
     } else {
-      saveConfiguration(code, storedUrl);
+      connectionFields.classList.toggle("hidden", true);
+      connectedState.classList.toggle("hidden", false);
+      connectionStatus.classList.toggle("hidden", false);
+      editConnectionButton.classList.add('hidden');
+
+      saveConnectionButton.classList.remove('hidden');
+      saveConnectionButton.addEventListener('click', () => {
+        saveConfiguration(code, storedUrl);
+      });
     }
   } catch (error) {
     console.error(error);

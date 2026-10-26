@@ -130,6 +130,10 @@ button.secondary {
   color: #27313a;
 }
 
+#connection-save-button {
+  min-width: 180px;
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;
