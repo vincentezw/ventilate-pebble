@@ -1,4 +1,3 @@
-const debugBox = document.querySelector("#debugbox");
 const form = document.querySelector("#config-form");
 
 const connectionSection = document.querySelector("#connection-section");
@@ -140,29 +139,29 @@ function startOAuthFlow() {
     return;
   }
 
-  localStorage.setItem("ha_url", url);
-
   const currentReturnTo = getQueryParam("return_to", null);
   if (currentReturnTo) {
     localStorage.setItem("return_to", currentReturnTo);
   }
 
+  const clientId = window.location.origin + window.location.pathname;
   const redirectUri = window.location.origin + window.location.pathname;
-  const clientId = redirectUri;
 
-  const authUrl = `${url}/auth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
-  window.location.href = authUrl;
+  const authUrl = new URL(`${url}/auth/authorize`);
+  authUrl.searchParams.set("client_id", clientId);
+  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set("state", url);
+
+  window.location.href = authUrl.toString();
 }
 
 // Handles page reload after Home Assistant redirects back with ?code=...
 async function handleOAuthCallback() {
   const urlParams = new URLSearchParams(window.location.search);
   const code = urlParams.get("code");
-  const storedUrl = localStorage.getItem("ha_url") || haUrlInput.value;
+  const storedUrl = urlParams.get("state") || haUrlInput.value;
 
   if (!code || !storedUrl) {
-    const debugMsg = `Debug Info: code=${code}, storedUrl=${storedUrl}`;
-    debugBox.textContent = debugMsg;
     return;
   }
 
@@ -177,8 +176,7 @@ async function handleOAuthCallback() {
       typeof Pebble.sendMessage === 'function' &&
       typeof Pebble.addEventListener === 'function') ? Pebble : null;
 
-    // if (bridge) {
-    if (false) {
+    if (bridge) {
       const clientId = window.location.origin + window.location.pathname;
       const reply = await bridge.sendMessage(JSON.stringify({clientId, code, url: storedUrl}));
       if (!reply) {
@@ -198,7 +196,12 @@ async function handleOAuthCallback() {
       connectionFields.classList.toggle("hidden", true);
       connectedState.classList.toggle("hidden", false);
       connectionStatus.classList.toggle("hidden", false);
+      connectionMessage.classList.toggle("hidden", false);
       editConnectionButton.classList.add('hidden');
+      connectionStatus.textContent = "Connected";
+      connectedUrl.textContent = normaliseUrl(storedUrl);
+      connectionMessage.textContent = `
+        Connection established. Click "Close to save" to save the configuration. Open the settings page again to configure sensors from a list of preloaded Home Assistant entities.`;
 
       saveConnectionButton.classList.remove('hidden');
       saveConnectionButton.addEventListener('click', () => {
